@@ -7,6 +7,8 @@ conditioners. It talks directly to the WF-RAC Wi-Fi module on your LAN — no cl
 manufacturer account. This repo contains the Node.js service, the web interface and
 protocol tooling.
 
+![AircoBridge web interface](screenie.png)
+
 ## Features
 
 - Polls one or more WF-RAC units and exposes their state over a REST API.
