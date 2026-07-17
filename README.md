@@ -36,14 +36,24 @@ report whether it works (include the model and firmware versions from
 
 You need Docker with the Compose plugin, and a WF-RAC unit that is already on your
 Wi-Fi (set up once with the Smart M-Air app). The published image supports AMD64 and
-ARM64 systems. Install it with:
+ARM64 systems. You can pull it directly with:
+
+```sh
+docker pull ghcr.io/crazyhenk44/aircobridge:latest
+```
+
+That command only downloads the image. To run it with persistent configuration,
+history storage and the correct port mapping, use the included Compose file:
 
 ```sh
 git clone https://github.com/CrazyHenk44/AircoBridge.git
 cd AircoBridge
 make setup                      # creates .env and an empty config/aircos.json
-docker compose up -d            # pulls and starts the prebuilt image
+docker compose up -d
 ```
+
+`docker compose up -d` uses that same image and pulls it automatically when it is not
+already installed.
 
 Open `http://localhost:3000` and click **"+ Add air conditioner"**. The wizard walks you
 through the rest:
