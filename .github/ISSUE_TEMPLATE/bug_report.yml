@@ -1,0 +1,83 @@
+name: Bug report
+description: Report reproducible incorrect behavior in AircoBridge
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include `deviceId`, `operatorId`, tokens, real installation IP addresses, `config/aircos.json`, or unsanitized debug output. Report security vulnerabilities through private vulnerability reporting instead.
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem
+      description: Describe what went wrong and when it happens.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest sequence that consistently reproduces the problem.
+      placeholder: |
+        1. Start AircoBridge with ...
+        2. Open ...
+        3. Select ...
+        4. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Describe what you expected to happen instead.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: AircoBridge version
+      description: Provide a release version, container tag, or image digest.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Docker Compose with the published image
+        - Docker with the published image
+        - Node.js from source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Host environment
+      description: Include the operating system and CPU architecture.
+      placeholder: Debian 13, ARM64
+    validations:
+      required: true
+  - type: input
+    id: unit
+    attributes:
+      label: Air conditioner and WF-RAC model
+      description: Include model and firmware versions when known. Do not include identifiers or network addresses.
+      placeholder: SRK35ZS-W with WF-RAC, firmware 1.2.3
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove credentials, identifiers, IP addresses, and other installation-specific data before attaching anything.
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the existing issues for this problem.
+          required: true
+        - label: I removed credentials and installation-specific data from this report.
+          required: true

@@ -123,6 +123,11 @@ The bridge has **no authentication** and disables TLS verification towards the u
 expose port 3000 to the internet. See [SECURITY.md](SECURITY.md) for the threat model and
 vulnerability-reporting guidance.
 
+## Contributing
+
+Bug reports, compatibility reports and pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and required checks.
+
 ## Credits
 
 Protocol knowledge builds on the reverse-engineering work of

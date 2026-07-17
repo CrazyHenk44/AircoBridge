@@ -1,0 +1,41 @@
+name: Question or compatibility report
+description: Ask for help or report results with another WF-RAC unit
+title: "[Question] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include `deviceId`, `operatorId`, tokens, real installation IP addresses, `config/aircos.json`, or unsanitized debug output.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question or result
+      description: Describe what you are trying to do or which unit you tested.
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include relevant commands and documentation you already followed.
+  - type: input
+    id: version
+    attributes:
+      label: AircoBridge version
+      placeholder: 1.0.0
+  - type: input
+    id: unit
+    attributes:
+      label: Air conditioner and WF-RAC model
+      description: Include firmware versions when known. Do not include identifiers or network addresses.
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the documentation and existing issues first.
+          required: true
+        - label: I removed credentials and installation-specific data from this report.
+          required: true
