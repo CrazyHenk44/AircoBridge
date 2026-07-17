@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Airco</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Airco</h1>
+      <p id="summary">Loading status...</p>
+    </div>
+    <div class="topbar-actions">
+      <button id="addAirco" type="button" class="secondary">+ Add air conditioner</button>
+      <button id="refreshAll" type="button">Refresh</button>
+    </div>
+  </header>
+
+  <main id="aircos" class="aircos"></main>
+
+  <template id="aircoTemplate">
+    <section class="airco">
+      <div class="airco-head">
+        <div class="airco-head-title">
+          <h2 data-field="name"></h2>
+          <span class="badge" data-field="online"></span>
+        </div>
+        <div class="airco-head-actions">
+          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">↻</button>
+          <button type="button" class="icon-button icon-danger" data-role="delete" aria-label="Delete" title="Delete">🗑</button>
+        </div>
+      </div>
+
+      <form class="controls">
+        <div class="control-panel">
+          <label>
+            <span class="label-head">Power</span>
+            <div class="segmented">
+              <button type="button" class="segment" data-action="power" data-value="on">On</button>
+              <button type="button" class="segment" data-action="power" data-value="off">Off</button>
+            </div>
+          </label>
+
+          <label>
+            <span class="label-head">3D auto</span>
+            <div class="segmented">
+              <button type="button" class="segment" data-action="entrust" data-value="on">On</button>
+              <button type="button" class="segment" data-action="entrust" data-value="off">Off</button>
+            </div>
+          </label>
+
+          <label>
+            <span class="label-head">Vacant preset</span>
+            <div class="segmented">
+              <button type="button" class="segment" data-action="vacant-preset" data-value="on">On</button>
+              <button type="button" class="segment" data-action="vacant-preset" data-value="off">Off</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="triple">
+          <label>
+            <span class="label-head">Target temperature</span>
+            <input name="temperature" type="number" min="18" max="30" step="0.5">
+          </label>
+
+          <label>
+            <span class="label-head">Mode</span>
+            <select name="mode">
+              <option value="auto">Auto</option>
+              <option value="cool">Cool</option>
+              <option value="heat">Heat</option>
+              <option value="dry">Dry</option>
+              <option value="fan">Fan</option>
+            </select>
+          </label>
+
+          <label>
+            <span class="label-head">Fan</span>
+            <select name="airflow">
+              <option value="auto">Auto</option>
+              <option value="lowest">Lowest</option>
+              <option value="low">Low</option>
+              <option value="high">High</option>
+              <option value="highest">Highest</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="split">
+          <label>
+            <span class="label-head">Vertical vane</span>
+            <select name="windDirectionUD" data-live-action="vane-ud">
+              <option value="0">Up/down auto</option>
+              <option value="1">Highest</option>
+              <option value="2">Middle</option>
+              <option value="3">Normal</option>
+              <option value="4">Lowest</option>
+            </select>
+          </label>
+          <label>
+            <span class="label-head">Horizontal vane</span>
+            <select name="windDirectionLR" data-live-action="vane-lr">
+              <option value="0">Left/right auto</option>
+              <option value="1">Left / left</option>
+              <option value="2">Left / middle</option>
+              <option value="3">Middle / middle</option>
+              <option value="4">Middle / right</option>
+              <option value="5">Right / right</option>
+              <option value="6">Left / right</option>
+              <option value="7">Right / left</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="status-strip">
+          <div class="status-strip-primary">
+            <div>Indoor <strong data-field="indoor"></strong></div>
+            <div>Outdoor <strong data-field="outdoor"></strong></div>
+            <div>Self-clean <strong data-field="selfClean"></strong></div>
+            <div data-field="errorCodeBox">Error code <strong data-field="errorCode"></strong></div>
+          </div>
+          <div class="status-strip-power">
+            <div>Energy <strong data-field="electricKwh"></strong></div>
+            <div>Watt <strong data-field="electricWatts"></strong></div>
+            <div>This month <strong data-field="monthTotal"></strong></div>
+          </div>
+        </div>
+
+      </form>
+
+      <p class="error" data-field="error"></p>
+
+      <div class="airco-footer">
+        <div><span class="footer-value" data-field="footerId"></span></div>
+        <div><span class="footer-value" data-field="footerAddress"></span></div>
+        <div><span class="footer-label">Update</span><strong data-field="footerUpdate"></strong></div>
+        <div class="power-history" data-field="powerHistory">On since <strong data-field="powerHistoryValue"></strong></div>
+      </div>
+    </section>
+  </template>
+
+  <dialog id="wizard" class="wizard" aria-labelledby="wizardTitle">
+    <form method="dialog" class="wizard-form" novalidate>
+      <header class="wizard-head">
+        <h2 id="wizardTitle">Add air conditioner</h2>
+        <button type="button" class="icon-button" data-wizard="close" aria-label="Close" title="Close">✕</button>
+      </header>
+
+      <ol class="wizard-steps" aria-hidden="true">
+        <li data-step-dot="connect">Connect</li>
+        <li data-step-dot="credentials">Access</li>
+        <li data-step-dot="test">Test</li>
+        <li data-step-dot="name">Name</li>
+      </ol>
+
+      <section class="wizard-step" data-step="connect">
+        <p>Enter the air conditioner's IP address. You can find it in your router's DHCP client list.</p>
+        <label>
+          <span class="label-head">IP address</span>
+          <input name="wizardIp" type="text" inputmode="decimal" placeholder="192.168.1.100" autocomplete="off" required>
+        </label>
+        <details class="wizard-advanced">
+          <summary>Advanced</summary>
+          <label>
+            <span class="label-head">Port</span>
+            <input name="wizardPort" type="number" min="1" max="65535" value="51443">
+          </label>
+        </details>
+        <div class="wizard-found is-hidden" data-wizard="found"></div>
+      </section>
+
+      <section class="wizard-step is-hidden" data-step="credentials">
+        <p>The unit only accepts commands from registered accounts. How do you want to set up access?</p>
+        <div class="choice-group" role="radiogroup" aria-label="Access">
+          <label class="choice">
+            <input type="radio" name="credMode" value="register" checked>
+            <span><strong>Register a new account</strong>
+            <small>Recommended. The bridge creates its own account on the unit (there are four slots).</small></span>
+          </label>
+          <label class="choice">
+            <input type="radio" name="credMode" value="reuse">
+            <span><strong>Use existing credentials</strong>
+            <small>Use a deviceId and operatorId that are already registered on the unit.</small></span>
+          </label>
+        </div>
+        <div class="reuse-fields is-hidden" data-wizard="reuseFields">
+          <label>
+            <span class="label-head">Device ID</span>
+            <input name="wizardDeviceId" type="text" autocomplete="off" spellcheck="false">
+          </label>
+          <label>
+            <span class="label-head">Operator ID</span>
+            <input name="wizardOperatorId" type="text" autocomplete="off" spellcheck="false">
+          </label>
+        </div>
+      </section>
+
+      <section class="wizard-step is-hidden" data-step="test">
+        <div class="wizard-busy" data-wizard="testBusy">
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Testing connection...</span>
+        </div>
+        <div class="wizard-result is-hidden" data-wizard="testResult"></div>
+      </section>
+
+      <section class="wizard-step is-hidden" data-step="name">
+        <p>The connection works. Give the unit a name.</p>
+        <label>
+          <span class="label-head">Name</span>
+          <input name="wizardName" type="text" placeholder="Living room" autocomplete="off" maxlength="40" required>
+        </label>
+      </section>
+
+      <section class="wizard-step is-hidden" data-step="done">
+        <div class="wizard-result" data-wizard="doneResult"></div>
+      </section>
+
+      <p class="error wizard-error" data-wizard="error" role="alert"></p>
+
+      <footer class="wizard-foot">
+        <button type="button" class="secondary is-hidden" data-wizard="back">Back</button>
+        <span class="wizard-foot-spacer"></span>
+        <button type="button" class="secondary" data-wizard="cancel">Cancel</button>
+        <button type="button" data-wizard="next">Continue</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDelete" class="wizard" aria-labelledby="confirmDeleteTitle">
+    <form method="dialog" class="wizard-form" novalidate>
+      <header class="wizard-head">
+        <h2 id="confirmDeleteTitle">Delete air conditioner</h2>
+        <button type="button" class="icon-button" data-confirm="close" aria-label="Close" title="Close">✕</button>
+      </header>
+
+      <p data-confirm="text"></p>
+      <p class="confirm-note" data-confirm="note"></p>
+
+      <p class="error wizard-error" data-confirm="error" role="alert"></p>
+
+      <footer class="wizard-foot">
+        <span class="wizard-foot-spacer"></span>
+        <button type="button" class="secondary" data-confirm="cancel">Cancel</button>
+        <button type="button" class="danger" data-confirm="delete">Delete</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

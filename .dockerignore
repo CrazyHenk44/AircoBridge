@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log*
+*.local.md
+.git
+config/aircos.json
+data
+.env
+.env.*
+!/.env.example

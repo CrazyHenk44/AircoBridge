@@ -1,0 +1,45 @@
+{
+  "name": "airco-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local HTTP bridge and web UI for Mitsubishi Heavy Industries Smart M-Air / WF-RAC air conditioners",
+  "main": "src/server.js",
+  "files": [
+    "config/aircos.example.json",
+    "protocol-debug.js",
+    "public/",
+    "src/",
+    "wfrac-lib.js"
+  ],
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test",
+    "check": "node --check src/*.js public/app.js wfrac-lib.js protocol-debug.js test/*.js && npm test",
+    "cli": "node wfrac-lib.js",
+    "protocol-debug": "node protocol-debug.js"
+  },
+  "keywords": [
+    "wf-rac",
+    "mitsubishi-heavy",
+    "smart-m-air",
+    "airco",
+    "air-conditioner",
+    "home-automation"
+  ],
+  "author": "Tom Albers",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CrazyHenk44/AircoBridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CrazyHenk44/AircoBridge/issues"
+  },
+  "homepage": "https://github.com/CrazyHenk44/AircoBridge#readme",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "axios": "^1.18.1"
+  }
+}
