@@ -19,6 +19,10 @@ predict whether deleting the unit will also remove its account (see `DELETE`).
 Full snapshot of one unit: configuration, `online`, `lastUpdate`, `lastError`, the
 parsed `status` object and power/usage `history`.
 
+Relevant `history` fields include the approximated current power in `currentWatts`,
+calendar totals in `dayTotalKwh`, `monthTotalKwh` and `monthly`, and the persistent,
+per-unit cumulative meter value in `totalKwh`.
+
 Query parameters:
 
 - `?raw=1` — include the raw Beaver API response (firmware versions, `airconStat`, …).

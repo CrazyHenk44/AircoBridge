@@ -29,6 +29,19 @@ function monthKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function nonNegativeNumber(value) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function maxKnownEnergy(...values) {
+  const numbers = values
+    .map(nonNegativeNumber)
+    .filter((value) => value != null);
+  return numbers.length > 0 ? Math.max(...numbers) : null;
+}
+
 function overlapMs(start, end, bucketStart, bucketEnd) {
   const left = Math.max(start.getTime(), bucketStart.getTime());
   const right = Math.min(end.getTime(), bucketEnd.getTime());
@@ -64,7 +77,45 @@ function normalizeSession(session) {
 function normalizeEntry(entry) {
   entry.sessions = Array.isArray(entry.sessions) ? entry.sessions : [];
   entry.monthly = entry.monthly && typeof entry.monthly === "object" ? entry.monthly : {};
+  const storedCompleted = nonNegativeNumber(entry.completedEnergyKwh);
+  if (storedCompleted != null) {
+    entry.completedEnergyKwh = storedCompleted;
+  } else {
+    const monthlyTotal = Object.values(entry.monthly).reduce(
+      (sum, value) => sum + (nonNegativeNumber(value) ?? 0),
+      0
+    );
+    const retainedSessionsTotal = entry.sessions.reduce(
+      (sum, session) => sum + (nonNegativeNumber(session?.energyKwh) ?? 0),
+      0
+    );
+    entry.completedEnergyKwh = Math.max(monthlyTotal, retainedSessionsTotal);
+  }
+
+  if (entry.currentSession && typeof entry.currentSession === "object") {
+    entry.currentSession.energyKwh = maxKnownEnergy(
+      entry.currentSession.energyKwh,
+      entry.lastElectricKwh
+    );
+  }
   return entry;
+}
+
+function addSessionToMonthly(entry, session) {
+  const start = parseDate(session.startedAt);
+  const end = parseDate(session.endedAt);
+  if (!start || !end || end <= start) return;
+
+  for (
+    let bucketStart = startOfLocalMonth(start);
+    bucketStart < end;
+    bucketStart = endOfLocalMonth(bucketStart)
+  ) {
+    const bucketEnd = endOfLocalMonth(bucketStart);
+    const key = monthKey(bucketStart);
+    const previous = nonNegativeNumber(entry.monthly[key]) ?? 0;
+    entry.monthly[key] = previous + energySliceForRange(session, bucketStart, bucketEnd);
+  }
 }
 
 class HistoryStore {
@@ -76,16 +127,16 @@ class HistoryStore {
   load() {
     try {
       if (!fs.existsSync(this.filePath)) {
-        return { version: 1, aircos: {} };
+        return { version: 2, aircos: {} };
       }
       const parsed = JSON.parse(fs.readFileSync(this.filePath, "utf8"));
       if (!parsed || typeof parsed !== "object") throw new Error("Invalid history file");
-      parsed.version = parsed.version || 1;
+      parsed.version = 2;
       parsed.aircos = parsed.aircos && typeof parsed.aircos === "object" ? parsed.aircos : {};
       for (const key of Object.keys(parsed.aircos)) normalizeEntry(parsed.aircos[key]);
       return parsed;
     } catch {
-      return { version: 1, aircos: {} };
+      return { version: 2, aircos: {} };
     }
   }
 
@@ -105,6 +156,7 @@ class HistoryStore {
         lastPowerOnAt: null,
         lastPowerOffAt: null,
         currentSession: null,
+        completedEnergyKwh: 0,
         monthly: {},
         sessions: [],
       };
@@ -119,20 +171,11 @@ class HistoryStore {
     }
   }
 
-  recalculateMonthly(entry, targetDate = new Date()) {
-    const targetKey = monthKey(targetDate);
-    const monthStart = startOfLocalMonth(targetDate);
-    const monthEnd = endOfLocalMonth(targetDate);
-    const total = entry.sessions.reduce((sum, session) => sum + energySliceForRange(session, monthStart, monthEnd), 0);
-    entry.monthly[targetKey] = total;
-    return total;
-  }
-
   recordPoll(id, status, now = new Date()) {
     const entry = this.entry(id);
     const powerState = status?.operation ? "on" : "off";
     const nowIso = toIso(now);
-    const electric = Number.isFinite(Number(status?.electric)) ? Number(status.electric) : null;
+    const electric = nonNegativeNumber(status?.electric);
     const previousState = entry.lastPowerState;
     const stateChanged = previousState !== powerState;
     let shouldSave = stateChanged;
@@ -146,6 +189,7 @@ class HistoryStore {
           startedAt: nowIso,
           source: "poll",
           lastSeenAt: nowIso,
+          energyKwh: electric,
         };
         shouldSave = true;
       } else {
@@ -153,19 +197,21 @@ class HistoryStore {
         if (entry.currentSession) {
           const startedAt = parseDate(entry.currentSession.startedAt);
           const durationMs = startedAt ? Math.max(0, now.getTime() - startedAt.getTime()) : 0;
-          const energyKwh = electric;
+          const energyKwh = maxKnownEnergy(entry.currentSession.energyKwh, electric);
           const averageWatts = energyKwh == null ? null : kwhToWatts(energyKwh, durationMs);
 
-          entry.sessions.push(normalizeSession({
+          const session = normalizeSession({
             startedAt: entry.currentSession.startedAt,
             endedAt: nowIso,
             energyKwh,
             averageWatts,
             source: entry.currentSession.source || "poll",
-          }));
+          });
+          entry.sessions.push(session);
+          entry.completedEnergyKwh += energyKwh ?? 0;
+          addSessionToMonthly(entry, session);
         }
         entry.currentSession = null;
-        this.recalculateMonthly(entry, now);
         shouldSave = true;
       }
     } else if (powerState === "on") {
@@ -174,12 +220,19 @@ class HistoryStore {
           startedAt: nowIso,
           source: "poll",
           lastSeenAt: nowIso,
+          energyKwh: electric,
         };
         if (!entry.lastPowerOnAt) entry.lastPowerOnAt = nowIso;
         if (!entry.lastPowerChangedAt) entry.lastPowerChangedAt = nowIso;
         shouldSave = true;
       } else {
         entry.currentSession.lastSeenAt = nowIso;
+        const previousEnergy = nonNegativeNumber(entry.currentSession.energyKwh);
+        const nextEnergy = maxKnownEnergy(previousEnergy, electric);
+        if (nextEnergy != null && (previousEnergy == null || nextEnergy > previousEnergy)) {
+          entry.currentSession.energyKwh = nextEnergy;
+          shouldSave = true;
+        }
       }
     } else if (!entry.lastPowerOffAt) {
       entry.lastPowerOffAt = nowIso;
@@ -198,16 +251,19 @@ class HistoryStore {
   summarize(id, status, now = new Date()) {
     const entry = this.entry(id);
     const currentPower = status?.operation ? "on" : "off";
-    const currentElectric = Number.isFinite(Number(status?.electric)) ? Number(status.electric) : entry.lastElectricKwh;
+    const currentElectric = nonNegativeNumber(status?.electric) ?? nonNegativeNumber(entry.lastElectricKwh);
     const startedAt = entry.currentSession ? parseDate(entry.currentSession.startedAt) : null;
     const currentDurationMs = startedAt ? Math.max(0, now.getTime() - startedAt.getTime()) : 0;
+    const currentSessionEnergy = entry.currentSession
+      ? maxKnownEnergy(entry.currentSession.energyKwh, currentElectric)
+      : null;
     const currentSession = entry.currentSession
       ? {
           startedAt: entry.currentSession.startedAt,
           lastSeenAt: entry.currentSession.lastSeenAt || null,
-          energyKwh: currentElectric,
+          energyKwh: currentSessionEnergy,
           durationMs: currentDurationMs,
-          watts: currentElectric == null ? null : kwhToWatts(currentElectric, currentDurationMs),
+          watts: currentSessionEnergy == null ? null : kwhToWatts(currentSessionEnergy, currentDurationMs),
         }
       : null;
 
@@ -231,23 +287,26 @@ class HistoryStore {
     const currentMonthKey = monthKey(now);
     const storedMonthTotal = Number(entry.monthly[currentMonthKey]) || 0;
     const monthTotalKwh = storedMonthTotal
-      + (entry.currentSession && currentPower === "on" && currentElectric != null
+      + (entry.currentSession && currentPower === "on" && currentSessionEnergy != null
         ? energySliceForRange({
             startedAt: entry.currentSession.startedAt,
             endedAt: now.toISOString(),
-            energyKwh: currentElectric,
+            energyKwh: currentSessionEnergy,
           }, monthStart, now)
         : 0);
 
     const dayStart = startOfLocalDay(now);
     const dayTotalKwh = [...entry.sessions].reduce((sum, session) => sum + energySliceForRange(session, dayStart, now), 0)
-      + (entry.currentSession && currentPower === "on" && currentElectric != null
+      + (entry.currentSession && currentPower === "on" && currentSessionEnergy != null
         ? energySliceForRange({
             startedAt: entry.currentSession.startedAt,
             endedAt: now.toISOString(),
-            energyKwh: currentElectric,
+            energyKwh: currentSessionEnergy,
           }, dayStart, now)
         : 0);
+
+    const totalKwh = entry.completedEnergyKwh
+      + (entry.currentSession && currentPower === "on" ? currentSessionEnergy ?? 0 : 0);
 
     return {
       powerState: currentPower,
@@ -260,6 +319,7 @@ class HistoryStore {
       currentWatts,
       dayTotalKwh,
       monthTotalKwh,
+      totalKwh,
       monthly: { ...entry.monthly },
       sessions: entry.sessions.slice(-50),
     };
