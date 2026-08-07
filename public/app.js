@@ -127,6 +127,7 @@ function syncControlAvailability(card) {
   const windDirectionLR = card.querySelector('[name="windDirectionLR"]');
   const poweredOff = !powerOn || !powerOn.classList.contains("active");
   const entrustActive = Boolean(entrustOn?.classList.contains("active"));
+  const statusAvailable = card.dataset.hasStatus === "true";
 
   card.querySelectorAll("input, select").forEach((element) => {
     element.disabled = poweredOff;
@@ -138,12 +139,71 @@ function syncControlAvailability(card) {
 
   if (windDirectionUD) windDirectionUD.disabled = poweredOff || entrustActive;
   if (windDirectionLR) windDirectionLR.disabled = poweredOff || entrustActive;
+  const savePreset = card.querySelector('[data-role="save-preset"]');
+  if (savePreset) savePreset.disabled = !statusAvailable;
 }
 
 function syncSegmentState(card, action, value) {
   card.querySelectorAll(`[data-action="${action}"]`).forEach((button) => {
-    button.classList.toggle("active", button.dataset.value === String(value));
+    const active = button.dataset.value === String(value);
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
   });
+}
+
+function presetSummary(preset) {
+  const settings = preset.settings;
+  const details = [
+    "Turns on",
+    `${settings.temperature} °C`,
+    settings.mode,
+    `fan ${settings.airflow}`,
+    `vertical vane ${settings.windDirectionUD}`,
+    `horizontal vane ${settings.windDirectionLR}`,
+    settings.entrust ? "3D auto on" : "3D auto off",
+    settings.vacant ? "vacant on" : "vacant off",
+  ];
+  return details.join(" · ");
+}
+
+function renderPresets(card, item) {
+  const list = card.querySelector('[data-role="preset-list"]');
+  const presets = Array.isArray(item.presets) ? item.presets : [];
+  if (presets.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "preset-empty";
+    empty.textContent = "No presets saved for this air conditioner yet.";
+    list.append(empty);
+    return;
+  }
+
+  for (const preset of presets) {
+    const group = document.createElement("span");
+    group.className = "preset-item";
+
+    const apply = document.createElement("button");
+    apply.type = "button";
+    apply.className = "preset-apply";
+    apply.textContent = preset.name;
+    apply.title = `Apply ${preset.name}: ${presetSummary(preset)}`;
+    apply.setAttribute("aria-label", `Apply preset ${preset.name}`);
+    apply.addEventListener("click", () => applyPreset(card, preset));
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "preset-remove";
+    remove.innerHTML = `
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="m5 5 10 10M15 5 5 15"></path>
+      </svg>
+    `;
+    remove.title = `Delete ${preset.name} from this air conditioner`;
+    remove.setAttribute("aria-label", `Delete preset ${preset.name}`);
+    remove.addEventListener("click", () => deletePreset(card, preset));
+
+    group.append(apply, remove);
+    list.append(group);
+  }
 }
 
 function renderAirco(item) {
@@ -155,6 +215,7 @@ function renderAirco(item) {
   const airflow = status.airFlowName || airflowByNumber[status.airFlow] || "unknown";
 
   card.dataset.id = airco.id;
+  card.dataset.hasStatus = String(Boolean(item.status));
   setText(card, "name", airco.name);
   setText(card, "footerId", airco.id);
   setText(card, "footerAddress", `${airco.ip}:${airco.port}`);
@@ -162,21 +223,24 @@ function renderAirco(item) {
   const powerHistory = formatPowerHistory(item.history);
   setVisible(card, "powerHistory", Boolean(powerHistory));
   setText(card, "powerHistoryValue", powerHistory);
-  setText(card, "indoor", status.indoorTemp == null ? "-" : `${status.indoorTemp} C`);
-  setText(card, "outdoor", status.outdoorTemp == null ? "-" : `${status.outdoorTemp} C`);
+  setText(card, "indoor", status.indoorTemp == null ? "-" : `${status.indoorTemp} °C`);
+  setText(card, "outdoor", status.outdoorTemp == null ? "-" : `${status.outdoorTemp} °C`);
   const electricKwh = status.electric ?? item.history?.lastElectricKwh;
   setText(card, "electricKwh", electricKwh == null ? "-" : `${Number(electricKwh).toFixed(2)} kWh`);
   setText(card, "electricWatts", formatWatts(item.history?.currentWatts));
   setText(card, "monthTotal", formatKwh(item.history?.monthTotalKwh));
   setText(card, "selfClean", status.isSelfCleanOperation ? "Active" : "Off");
+  card.querySelector('[data-status="selfClean"]')
+    ?.classList.toggle("is-active", Boolean(status.isSelfCleanOperation));
   const errorCode = String(status.errorCode || "").trim();
   const showErrorCode = errorCode && errorCode !== "00";
   setVisible(card, "errorCodeBox", showErrorCode);
   setText(card, "errorCode", showErrorCode ? errorCode : "");
   setText(card, "error", item.lastError ? item.lastError.message : "");
 
-  badge.textContent = item.online ? "online" : "offline";
+  badge.textContent = item.online ? "Online" : "Offline";
   badge.classList.toggle("offline", !item.online);
+  badge.setAttribute("aria-label", item.online ? "Air conditioner online" : "Air conditioner offline");
 
   setFormValue(card, "temperature", status.presetTemp);
   setFormValue(card, "mode", mode);
@@ -186,6 +250,7 @@ function renderAirco(item) {
   syncSegmentState(card, "power", status.power || "off");
   syncSegmentState(card, "entrust", status.entrust ? "on" : "off");
   syncSegmentState(card, "vacant-preset", status.isVacantProperty ? "on" : "off");
+  renderPresets(card, item);
   syncControlAvailability(card);
 
   card.querySelectorAll("[data-action]").forEach((button) => {
@@ -197,6 +262,9 @@ function renderAirco(item) {
   card.querySelector('[data-role="delete"]').addEventListener("click", () => {
     openDeleteDialog(item);
   });
+
+  const savePreset = card.querySelector('[data-role="save-preset"]');
+  savePreset.addEventListener("click", () => openPresetDialog(item));
 
   card.querySelector('[name="temperature"]')?.addEventListener("change", async () => {
     await saveSettings(card);
@@ -219,6 +287,40 @@ function renderAirco(item) {
   });
 
   return card;
+}
+
+async function applyPreset(card, preset) {
+  const id = encodeURIComponent(card.dataset.id);
+  setControlsDisabled(card, true);
+  try {
+    await request(`/api/aircos/${id}/presets/${encodeURIComponent(preset.id)}/apply`, {
+      method: "POST",
+      body: "{}",
+    });
+    pauseRefreshUntil = 0;
+    await load({ force: true });
+  } catch (err) {
+    setText(card, "error", err.message);
+  } finally {
+    setControlsDisabled(card, false);
+    syncControlAvailability(card);
+  }
+}
+
+async function deletePreset(card, preset) {
+  if (!window.confirm(`Delete preset "${preset.name}" from this air conditioner?`)) return;
+  const id = encodeURIComponent(card.dataset.id);
+  setControlsDisabled(card, true);
+  try {
+    await request(`/api/aircos/${id}/presets/${encodeURIComponent(preset.id)}`, { method: "DELETE" });
+    pauseRefreshUntil = 0;
+    await load({ force: true });
+  } catch (err) {
+    setText(card, "error", err.message);
+  } finally {
+    setControlsDisabled(card, false);
+    syncControlAvailability(card);
+  }
 }
 
 async function runCommand(card, action, value) {
@@ -287,11 +389,37 @@ async function saveSettings(card) {
 function renderEmptyState() {
   const empty = document.createElement("section");
   empty.className = "empty-state";
-  const message = document.createElement("p");
-  message.textContent = "No air conditioners configured yet.";
+
+  const content = document.createElement("div");
+  content.className = "empty-state-content";
+
+  const icon = document.createElement("span");
+  icon.className = "empty-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = `
+    <svg viewBox="0 0 32 32">
+      <rect x="5" y="7" width="22" height="12" rx="3"></rect>
+      <path d="M10 13h12M10 23c1.8-1.7 4.2-1.7 6 0s4.2 1.7 6 0"></path>
+    </svg>
+  `;
+
+  const message = document.createElement("h2");
+  message.textContent = "Your climate dashboard is ready";
   const hint = document.createElement("p");
-  hint.textContent = "Click \"+ Add air conditioner\" to connect your first unit.";
-  empty.append(message, hint);
+  hint.textContent = "Connect your first air conditioner to control comfort settings and monitor live energy use.";
+
+  const action = document.createElement("button");
+  action.type = "button";
+  action.innerHTML = `
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="M10 4v12M4 10h12"></path>
+    </svg>
+    Add air conditioner
+  `;
+  action.addEventListener("click", () => addAirco.click());
+
+  content.append(icon, message, hint, action);
+  empty.append(content);
   return empty;
 }
 
@@ -446,7 +574,7 @@ async function wizardConnect() {
     wizardState.port = port;
     wizardState.probed = info;
     const found = wizardEl("found");
-    found.textContent = `✓ Unit found (MAC ${info.macAddress || info.airconId || "unknown"})`;
+    found.textContent = `Unit found (MAC ${info.macAddress || info.airconId || "unknown"})`;
     found.classList.remove("is-hidden");
     showWizardStep("credentials");
   } catch (err) {
@@ -514,7 +642,7 @@ async function runWizardTest() {
       status.indoorTemp == null ? null : `Indoor: ${status.indoorTemp} °C`,
       status.outdoorTemp == null ? null : `Outdoor: ${status.outdoorTemp} °C`,
     ].filter(Boolean);
-    resultEl.textContent = `✓ Connection works. ${parts.join(" · ")}`;
+    resultEl.textContent = `Connection works. ${parts.join(" · ")}`;
     resultEl.classList.remove("is-hidden");
     showWizardStep("name");
   } catch (err) {
@@ -546,7 +674,7 @@ async function wizardSave() {
       }),
     });
     wizardState.saved = true;
-    wizardEl("doneResult").textContent = `✓ "${snapshot.airco.name}" was added and will now refresh every ${Math.round(snapshot.airco.pollIntervalMs / 1000)} seconds.`;
+    wizardEl("doneResult").textContent = `"${snapshot.airco.name}" was added and will now refresh every ${Math.round(snapshot.airco.pollIntervalMs / 1000)} seconds.`;
     showWizardStep("done");
     pauseRefreshUntil = 0;
     load({ force: true }).catch(() => {});
@@ -601,6 +729,82 @@ addAirco.addEventListener("click", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Presets
+// ---------------------------------------------------------------------------
+
+const presetDialog = document.getElementById("presetDialog");
+const presetForm = presetDialog.querySelector('[data-preset="form"]');
+let presetTargetId = null;
+let presetBusy = false;
+
+function presetEl(name) {
+  return presetDialog.querySelector(`[data-preset="${name}"]`);
+}
+
+function openPresetDialog(item) {
+  presetTargetId = item.airco.id;
+  presetBusy = false;
+  presetForm.reset();
+  presetEl("source").textContent = `Save the current settings from ${item.airco.name}.`;
+  presetEl("error").textContent = "";
+  presetEl("save").disabled = false;
+  presetEl("save").textContent = "Save preset";
+  presetDialog.showModal();
+  presetForm.elements.presetName.focus();
+}
+
+function closePresetDialog() {
+  if (!presetBusy) presetDialog.close();
+}
+
+async function savePreset(event) {
+  event.preventDefault();
+  if (presetBusy || !presetTargetId) return;
+
+  const name = presetForm.elements.presetName.value.trim();
+  if (!name) {
+    presetEl("error").textContent = "Enter a preset name.";
+    presetForm.elements.presetName.focus();
+    return;
+  }
+
+  presetBusy = true;
+  presetEl("error").textContent = "";
+  presetEl("save").disabled = true;
+  presetEl("save").textContent = "Saving...";
+
+  try {
+    await request(`/api/aircos/${encodeURIComponent(presetTargetId)}/presets`, {
+      method: "POST",
+      body: JSON.stringify({
+        name,
+        global: presetForm.elements.presetGlobal.checked,
+      }),
+    });
+    presetDialog.close();
+    pauseRefreshUntil = 0;
+    await load({ force: true });
+  } catch (err) {
+    presetEl("error").textContent = friendlyError(err);
+  } finally {
+    presetBusy = false;
+    presetEl("save").disabled = false;
+    presetEl("save").textContent = "Save preset";
+  }
+}
+
+presetForm.addEventListener("submit", savePreset);
+presetEl("cancel").addEventListener("click", closePresetDialog);
+presetEl("close").addEventListener("click", closePresetDialog);
+presetDialog.addEventListener("cancel", (event) => {
+  if (presetBusy) event.preventDefault();
+});
+presetDialog.addEventListener("close", () => {
+  presetTargetId = null;
+  presetBusy = false;
+});
+
+// ---------------------------------------------------------------------------
 // Delete confirmation
 // ---------------------------------------------------------------------------
 
@@ -619,8 +823,8 @@ function openDeleteDialog(item) {
   confirmEl("error").textContent = "";
   const willDeleteAccount = item.airco.bridgeManagedIdentity && !item.airco.identityShared;
   confirmEl("note").textContent = willDeleteAccount
-    ? "Stored usage history will also be deleted, and the account created by the bridge will be removed from the unit."
-    : "Stored usage history will also be deleted. The account on the unit will remain.";
+    ? "Stored usage history and presets will also be deleted, and the account created by the bridge will be removed from the unit."
+    : "Stored usage history and presets will also be deleted. The account on the unit will remain.";
   confirmEl("note").classList.remove("is-hidden");
   const deleteButton = confirmEl("delete");
   deleteButton.disabled = false;

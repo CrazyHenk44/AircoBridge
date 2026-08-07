@@ -9,6 +9,7 @@
   polls on an interval.
 - `src/config.js`: configuration loading and validation.
 - `src/history-store.js`: power/usage history persistence.
+- `src/preset-store.js`: persistent, per-unit named control presets.
 - `public/`: the web interface (plain HTML/CSS/JS).
 - `wfrac-lib.js`: CLI wrapper around `src/wfrac.js` for manual tests, without
   hard-coded secrets.

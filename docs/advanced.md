@@ -58,7 +58,8 @@ configure a unit by hand instead, add an entry to the `aircos` array:
 
 Multiple units can run in one service. Power history and consumption are tracked
 automatically from the polled status and stored in `data/airco-history.json` (override
-with `AIRCO_HISTORY_FILE`).
+with `AIRCO_HISTORY_FILE`). Named presets are stored in `data/airco-presets.json`
+(override with `AIRCO_PRESETS_FILE`).
 
 For Docker Compose, the host HTTP port is set through `.env`:
 

@@ -5,6 +5,28 @@ interface uses the same API, so anything the UI can do, your own integration can
 
 There is no authentication; see the security note in the README.
 
+## Capability detection
+
+### `GET /api/info`
+
+Returns bridge and API metadata for integrations that may be newer than the server:
+
+```json
+{
+  "name": "AircoBridge",
+  "bridgeVersion": "1.0.0",
+  "apiVersion": 1,
+  "features": {
+    "presets": true,
+    "globalPresets": true
+  }
+}
+```
+
+Clients should detect optional functionality through `features`, not by comparing
+version strings. A `404` from this endpoint identifies a legacy server; clients can
+continue using the existing endpoints while hiding unsupported optional features.
+
 ## Reading state
 
 ### `GET /api/aircos`
@@ -12,12 +34,16 @@ There is no authentication; see the security note in the README.
 Lists all configured units with their latest polled state. Each `airco` object also
 carries `bridgeManagedIdentity` (the bridge created this identity itself) and
 `identityShared` (another configured unit uses the same identity); the UI uses these to
-predict whether deleting the unit will also remove its account (see `DELETE`).
+predict whether deleting the unit will also remove its account (see `DELETE`). Every
+item also has a `presets` array containing that unit's named presets.
 
 ### `GET /api/aircos/:id`
 
 Full snapshot of one unit: configuration, `online`, `lastUpdate`, `lastError`, the
-parsed `status` object and power/usage `history`.
+parsed `status` object, power/usage `history` and its current `presets` array. Newer
+clients can use the presence of the `presets` property as per-unit feature detection:
+an empty array means presets are supported but none have been saved. Legacy servers
+omit the property entirely.
 
 Relevant `history` fields include the approximated current power in `currentWatts`,
 calendar totals in `dayTotalKwh`, `monthTotalKwh` and `monthly`, and the persistent,
@@ -127,6 +153,41 @@ Combined update; any subset of the fields above in one call:
 }
 ```
 
+## Presets
+
+Presets belong to individual air conditioners and contain target temperature, mode,
+fan speed, both vane positions, 3D auto, the vacant flag and the automatic cool/heat
+decision flag. Applying a preset always turns the selected unit on. Presets are
+persisted in `data/airco-presets.json`.
+
+### `GET /api/aircos/:id/presets`
+
+Lists the presets saved for one unit.
+
+The same list is included in `GET /api/aircos/:id`, allowing clients that already poll
+the unit snapshot to discover support and keep the available choices current without a
+separate capability cache.
+
+### `POST /api/aircos/:id/presets`
+
+Captures the unit's latest known settings under a name:
+
+```json
+{ "name": "Sleep", "global": false }
+```
+
+With `global: true`, the preset is copied to every air conditioner configured at that
+moment. Each copy is independent: applying or deleting it still affects only the unit
+named in the request. Units added later do not automatically receive previous copies.
+
+### `POST /api/aircos/:id/presets/:presetId/apply`
+
+Applies every setting in the selected preset to that unit in one queued update.
+
+### `DELETE /api/aircos/:id/presets/:presetId`
+
+Deletes the selected preset only from that unit.
+
 ## Setup endpoints
 
 These power the setup wizard in the web UI; you can also call them directly. All
@@ -176,9 +237,9 @@ configuration (not `AIRCO_CONFIG_JSON`).
 ### `DELETE /api/aircos/:id`
 
 Removes the unit: stops polling, deletes it from the config file and discards its usage
-history. If the bridge created the identity itself (deviceId with the `airco-bridge-`
-prefix) and no other configured unit shares it, the operator account is also removed
-from the unit. The response reports what happened:
+history and presets. If the bridge created the identity itself (deviceId with the
+`airco-bridge-` prefix) and no other configured unit shares it, the operator account is
+also removed from the unit. The response reports what happened:
 
 ```json
 { "removed": "living-room", "accountDeleted": true }

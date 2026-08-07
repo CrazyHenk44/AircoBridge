@@ -9,6 +9,7 @@ services:
       PORT: 3000
       AIRCO_CONFIG_FILE: /app/config/aircos.json
       AIRCO_HISTORY_FILE: /app/data/airco-history.json
+      AIRCO_PRESETS_FILE: /app/data/airco-presets.json
     volumes:
       - ./config:/app/config
       - ./data:/app/data

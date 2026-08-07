@@ -5,7 +5,9 @@ const http = require("http");
 const path = require("path");
 const { AircoManager } = require("./airco-manager");
 const { loadConfig, normalizeAirco, appendAircoToFile, removeAircoFromFile } = require("./config");
+const { PresetStore } = require("./preset-store");
 const { BRIDGE_DEVICE_PREFIX, probeUnit, registerOperator, unregisterOperator, testConnection } = require("./registration");
+const { version: BRIDGE_VERSION } = require("../package.json");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
 const MAX_REQUEST_BODY_BYTES = 64 * 1024;
@@ -135,6 +137,32 @@ function applyVacantRestoreState(status, restore) {
   status.isVacantProperty = restore.isVacantProperty ? 1 : 0;
 }
 
+function capturePresetSettings(status) {
+  return {
+    power: true,
+    temperature: status.presetTemp,
+    mode: status.operationModeName,
+    airflow: status.airFlowName,
+    windDirectionUD: status.windDirectionUD,
+    windDirectionLR: status.windDirectionLR,
+    entrust: Boolean(status.entrust),
+    coolHotJudge: Boolean(status.coolHotJudge),
+    vacant: Boolean(status.isVacantProperty),
+  };
+}
+
+function applyPresetSettings(status, settings) {
+  status.setMode(settings.mode);
+  status.presetTemp = settings.temperature;
+  status.setAirFlow(settings.airflow);
+  status.setWindDirectionUD(settings.windDirectionUD);
+  status.setWindDirectionLR(settings.windDirectionLR);
+  status.setEntrust(settings.entrust);
+  status.setVacantProperty(settings.vacant);
+  status.coolHotJudge = settings.coolHotJudge;
+  status.setPower(true);
+}
+
 function setupTarget(body) {
   const ip = String(body.ip || "").trim();
   if (!ip) throw Object.assign(new Error("ip is required"), { statusCode: 400 });
@@ -231,7 +259,7 @@ async function addAirco(res, manager, configFile, body) {
   return sendJson(res, 201, runtime.snapshot());
 }
 
-async function deleteAirco(res, manager, configFile, runtime) {
+async function deleteAirco(res, manager, configFile, presetStore, runtime) {
   if (!configFile) {
     throw Object.assign(
       new Error("Configuration is not file-based; remove the air conditioner from your config source manually."),
@@ -242,6 +270,7 @@ async function deleteAirco(res, manager, configFile, runtime) {
   const config = runtime.config;
   manager.remove(config.id);
   removeAircoFromFile(configFile, config.id);
+  presetStore.removeAirco(config.id);
 
   let accountDeleted = null;
   const createdByBridge = String(config.deviceId).startsWith(BRIDGE_DEVICE_PREFIX);
@@ -265,12 +294,28 @@ async function deleteAirco(res, manager, configFile, runtime) {
   return sendJson(res, 200, { removed: config.id, accountDeleted });
 }
 
-async function routeApi(req, res, manager, configFile) {
+async function routeApi(req, res, manager, configFile, presetStore) {
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
 
+  if (req.method === "GET" && url.pathname === "/api/info") {
+    return sendJson(res, 200, {
+      name: "AircoBridge",
+      bridgeVersion: BRIDGE_VERSION,
+      apiVersion: 1,
+      features: {
+        presets: true,
+        globalPresets: true,
+      },
+    });
+  }
+
   if (req.method === "GET" && url.pathname === "/api/aircos") {
-    return sendJson(res, 200, { aircos: manager.list() });
+    const aircos = manager.list().map((item) => ({
+      ...item,
+      presets: presetStore.list(item.airco.id),
+    }));
+    return sendJson(res, 200, { aircos });
   }
 
   if (req.method === "POST" && parts[0] === "api" && parts[1] === "setup" && parts[2]) {
@@ -287,16 +332,48 @@ async function routeApi(req, res, manager, configFile) {
 
   const runtime = manager.get(parts[2]);
   const action = parts[3];
+  const presetId = parts[4];
+
+  if (action === "presets") {
+    if (req.method === "GET" && !presetId) {
+      return sendJson(res, 200, { presets: presetStore.list(runtime.config.id) });
+    }
+    if (req.method === "DELETE" && presetId && !parts[5]) {
+      return sendJson(res, 200, { removed: presetStore.remove(runtime.config.id, presetId) });
+    }
+    if (req.method === "POST" && !presetId) {
+      const body = await readBody(req);
+      const status = runtime.snapshot().status;
+      if (!status) {
+        throw Object.assign(new Error("No air conditioner status available to save"), { statusCode: 409 });
+      }
+      const aircoIds = body.global === true ? manager.configs().map((config) => config.id) : [runtime.config.id];
+      const created = presetStore.createMany(aircoIds, body.name, capturePresetSettings(status));
+      return sendJson(res, 201, { created });
+    }
+    if (req.method === "POST" && presetId && parts[5] === "apply") {
+      await readBody(req);
+      const preset = presetStore.get(runtime.config.id, presetId);
+      const snapshot = await runtime.update((status) => applyPresetSettings(status, preset.settings));
+      runtime.vacantPresetRestoreState = null;
+      return sendJson(res, 200, { ...snapshot, appliedPreset: preset });
+    }
+    return sendJson(res, req.method === "GET" || req.method === "POST" || req.method === "DELETE" ? 404 : 405, {
+      error: req.method === "GET" || req.method === "POST" || req.method === "DELETE" ? "Not found" : "Method not allowed",
+    });
+  }
 
   if (req.method === "GET" && !action) {
-    return sendJson(res, 200, runtime.snapshot({
+    const snapshot = runtime.snapshot({
       includeRaw: url.searchParams.get("raw") === "1",
       includeDebug: url.searchParams.get("debug") === "1",
-    }));
+    });
+    snapshot.presets = presetStore.list(runtime.config.id);
+    return sendJson(res, 200, snapshot);
   }
 
   if (req.method === "DELETE" && !action) {
-    return deleteAirco(res, manager, configFile, runtime);
+    return deleteAirco(res, manager, configFile, presetStore, runtime);
   }
 
   if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
@@ -349,10 +426,10 @@ async function routeApi(req, res, manager, configFile) {
   return sendJson(res, 200, result);
 }
 
-function createServer(manager, { configFile = null } = {}) {
+function createServer(manager, { configFile = null, presetStore = new PresetStore() } = {}) {
   return http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
-      routeApi(req, res, manager, configFile).catch((err) => sendError(res, err));
+      routeApi(req, res, manager, configFile, presetStore).catch((err) => sendError(res, err));
       return;
     }
     serveStatic(req, res);
@@ -362,7 +439,8 @@ function createServer(manager, { configFile = null } = {}) {
 function main() {
   const config = loadConfig();
   const manager = new AircoManager(config.aircos, config.historyFile);
-  const server = createServer(manager, { configFile: config.configFile });
+  const presetStore = new PresetStore(config.presetsFile);
+  const server = createServer(manager, { configFile: config.configFile, presetStore });
 
   manager.start();
 

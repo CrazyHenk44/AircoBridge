@@ -78,6 +78,7 @@ function loadConfig() {
       port: parseIntValue(process.env.PORT || server.port, 3000),
     },
     historyFile: process.env.AIRCO_HISTORY_FILE || server.historyFile || "data/airco-history.json",
+    presetsFile: process.env.AIRCO_PRESETS_FILE || server.presetsFile || "data/airco-presets.json",
     aircos,
     configFile,
   };

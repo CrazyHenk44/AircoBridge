@@ -13,6 +13,8 @@ protocol tooling.
 
 - Polls one or more WF-RAC units and exposes their state over a REST API.
 - Web interface for power, target temperature, mode, fan speed, vanes and 3D auto.
+- Saves named, per-unit presets for restoring all controls with one click; a preset can
+  optionally be copied to every currently configured unit.
 - Tracks power usage history (`data/airco-history.json`), including monthly totals.
 - Interactive protocol-debug tool for reverse-engineering unknown status bytes.
 
@@ -69,8 +71,8 @@ credentials" in the wizard. Manual configuration, CLI registration and other way
 obtain credentials are described in [docs/advanced.md](docs/advanced.md).
 
 To remove a unit, use the delete button on its card. This also discards its usage
-history, and — when the bridge registered the account itself — removes that account
-from the unit again, freeing up the operator slot.
+history and presets, and — when the bridge registered the account itself — removes that
+account from the unit again, freeing up the operator slot.
 
 ### Troubleshooting
 
@@ -92,8 +94,9 @@ docker compose down
 make update                     # pull the newest image and restart
 ```
 
-History is stored in `data/airco-history.json`; override the path with
-`AIRCO_HISTORY_FILE` if needed.
+History is stored in `data/airco-history.json`, and presets in
+`data/airco-presets.json`. Override the paths with `AIRCO_HISTORY_FILE` and
+`AIRCO_PRESETS_FILE` if needed.
 
 By default, Compose binds the web UI to `127.0.0.1` only. If you intentionally want to
 expose it on your LAN, set `AIRCO_HTTP_BIND=0.0.0.0` in `.env` and protect access at
@@ -110,6 +113,8 @@ curl -X POST http://localhost:3000/api/aircos/living-room/power \
 ```
 
 See [docs/api.md](docs/api.md) for the full endpoint reference.
+Integrations can use `GET /api/info` to detect optional bridge features such as
+presets while remaining compatible with older server versions.
 
 ## Documentation
 

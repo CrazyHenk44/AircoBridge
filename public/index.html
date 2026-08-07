@@ -8,13 +8,36 @@
 </head>
 <body>
   <header class="topbar">
-    <div>
-      <h1>Airco</h1>
-      <p id="summary">Loading status...</p>
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <path d="M7 12.5c3.2-3.5 7.5-4.8 11-3.1 2.1 1 3.5 2.8 4 5"></path>
+          <path d="M6 18c3-2.6 6.6-3.2 9.4-1.7 1.6.9 2.7 2.3 3.1 4"></path>
+          <path d="M8.5 23c2-1.2 4.3-1.2 6 0"></path>
+        </svg>
+      </span>
+      <div class="topbar-copy">
+        <span class="eyebrow">Home climate</span>
+        <div class="brand-title-row">
+          <h1>Airco</h1>
+          <p id="summary" aria-live="polite">Loading status...</p>
+        </div>
+      </div>
     </div>
     <div class="topbar-actions">
-      <button id="addAirco" type="button" class="secondary">+ Add air conditioner</button>
-      <button id="refreshAll" type="button">Refresh</button>
+      <button id="refreshAll" type="button" class="secondary">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M15.3 6.2A6.5 6.5 0 1 0 16.4 12"></path>
+          <path d="M15.3 2.8v3.7h-3.7"></path>
+        </svg>
+        Refresh all
+      </button>
+      <button id="addAirco" type="button">
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M10 4v12M4 10h12"></path>
+        </svg>
+        Add air conditioner
+      </button>
     </div>
   </header>
 
@@ -22,131 +45,248 @@
 
   <template id="aircoTemplate">
     <section class="airco">
-      <div class="airco-head">
+      <header class="airco-head">
         <div class="airco-head-title">
-          <h2 data-field="name"></h2>
-          <span class="badge" data-field="online"></span>
+          <span class="eyebrow">Air conditioner</span>
+          <div class="airco-title-row">
+            <h2 data-field="name"></h2>
+            <span class="badge" data-field="online"></span>
+          </div>
         </div>
         <div class="airco-head-actions">
-          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh" title="Refresh">↻</button>
-          <button type="button" class="icon-button icon-danger" data-role="delete" aria-label="Delete" title="Delete">🗑</button>
+          <button type="button" class="icon-button" data-action="refresh" aria-label="Refresh this air conditioner" title="Refresh">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M15.3 6.2A6.5 6.5 0 1 0 16.4 12"></path>
+              <path d="M15.3 2.8v3.7h-3.7"></path>
+            </svg>
+          </button>
+          <button type="button" class="icon-button icon-danger" data-role="delete" aria-label="Delete this air conditioner" title="Delete">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M4.5 6.5h11"></path>
+              <path d="M8 3.5h4l.8 3H7.2l.8-3Z"></path>
+              <path d="m6 6.5.7 10h6.6l.7-10M8.5 9v4.5M11.5 9v4.5"></path>
+            </svg>
+          </button>
         </div>
-      </div>
+      </header>
+
+      <section class="status-board" aria-label="Current air conditioner status">
+        <section class="status-group status-group-climate" aria-label="Climate">
+          <header class="status-group-head">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M8 11.2V4.5a2 2 0 0 1 4 0v6.7a4 4 0 1 1-4 0Z"></path>
+              <path d="M10 7v6"></path>
+            </svg>
+            <h3>Climate</h3>
+          </header>
+          <dl class="status-metrics">
+            <div class="status-metric status-metric-current">
+              <dt>Indoor</dt>
+              <dd data-field="indoor"></dd>
+            </div>
+            <div class="status-metric">
+              <dt>Outdoor</dt>
+              <dd data-field="outdoor"></dd>
+            </div>
+            <div class="status-metric status-metric-self-clean" data-status="selfClean">
+              <dt>Self-clean</dt>
+              <dd data-field="selfClean"></dd>
+            </div>
+            <div class="status-metric status-metric-error" data-field="errorCodeBox" role="status">
+              <dt>Error code</dt>
+              <dd data-field="errorCode"></dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="status-group status-group-energy" aria-label="Energy use">
+          <header class="status-group-head">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m11.4 1.8-6 9h4l-.8 7.4 6-9h-4l.8-7.4Z"></path>
+            </svg>
+            <h3>Energy use</h3>
+          </header>
+          <dl class="status-metrics">
+            <div class="status-metric">
+              <dt>Meter</dt>
+              <dd data-field="electricKwh"></dd>
+            </div>
+            <div class="status-metric status-metric-current">
+              <dt>Now</dt>
+              <dd data-field="electricWatts"></dd>
+            </div>
+            <div class="status-metric">
+              <dt>This month</dt>
+              <dd data-field="monthTotal"></dd>
+            </div>
+          </dl>
+        </section>
+      </section>
 
       <form class="controls">
-        <div class="control-panel">
-          <label>
-            <span class="label-head">Power</span>
-            <div class="segmented">
-              <button type="button" class="segment" data-action="power" data-value="on">On</button>
-              <button type="button" class="segment" data-action="power" data-value="off">Off</button>
+        <section class="control-section control-section-quick" aria-label="Quick controls">
+          <header class="section-head">
+            <div>
+              <span class="section-kicker">Operating state</span>
+              <h3>Quick controls</h3>
             </div>
-          </label>
+            <p>Switch core functions without changing your comfort settings.</p>
+          </header>
+          <div class="control-panel">
+            <fieldset class="toggle-field">
+              <legend class="label-head">Power</legend>
+              <div class="segmented">
+                <button type="button" class="segment" data-action="power" data-value="on">On</button>
+                <button type="button" class="segment" data-action="power" data-value="off">Off</button>
+              </div>
+            </fieldset>
 
-          <label>
-            <span class="label-head">3D auto</span>
-            <div class="segmented">
-              <button type="button" class="segment" data-action="entrust" data-value="on">On</button>
-              <button type="button" class="segment" data-action="entrust" data-value="off">Off</button>
-            </div>
-          </label>
+            <fieldset class="toggle-field">
+              <legend class="label-head">3D auto</legend>
+              <div class="segmented">
+                <button type="button" class="segment" data-action="entrust" data-value="on">On</button>
+                <button type="button" class="segment" data-action="entrust" data-value="off">Off</button>
+              </div>
+            </fieldset>
 
-          <label>
-            <span class="label-head">Vacant preset</span>
-            <div class="segmented">
-              <button type="button" class="segment" data-action="vacant-preset" data-value="on">On</button>
-              <button type="button" class="segment" data-action="vacant-preset" data-value="off">Off</button>
-            </div>
-          </label>
-        </div>
-
-        <div class="triple">
-          <label>
-            <span class="label-head">Target temperature</span>
-            <input name="temperature" type="number" min="18" max="30" step="0.5">
-          </label>
-
-          <label>
-            <span class="label-head">Mode</span>
-            <select name="mode">
-              <option value="auto">Auto</option>
-              <option value="cool">Cool</option>
-              <option value="heat">Heat</option>
-              <option value="dry">Dry</option>
-              <option value="fan">Fan</option>
-            </select>
-          </label>
-
-          <label>
-            <span class="label-head">Fan</span>
-            <select name="airflow">
-              <option value="auto">Auto</option>
-              <option value="lowest">Lowest</option>
-              <option value="low">Low</option>
-              <option value="high">High</option>
-              <option value="highest">Highest</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="split">
-          <label>
-            <span class="label-head">Vertical vane</span>
-            <select name="windDirectionUD" data-live-action="vane-ud">
-              <option value="0">Up/down auto</option>
-              <option value="1">Highest</option>
-              <option value="2">Middle</option>
-              <option value="3">Normal</option>
-              <option value="4">Lowest</option>
-            </select>
-          </label>
-          <label>
-            <span class="label-head">Horizontal vane</span>
-            <select name="windDirectionLR" data-live-action="vane-lr">
-              <option value="0">Left/right auto</option>
-              <option value="1">Left / left</option>
-              <option value="2">Left / middle</option>
-              <option value="3">Middle / middle</option>
-              <option value="4">Middle / right</option>
-              <option value="5">Right / right</option>
-              <option value="6">Left / right</option>
-              <option value="7">Right / left</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="status-strip">
-          <div class="status-strip-primary">
-            <div>Indoor <strong data-field="indoor"></strong></div>
-            <div>Outdoor <strong data-field="outdoor"></strong></div>
-            <div>Self-clean <strong data-field="selfClean"></strong></div>
-            <div data-field="errorCodeBox">Error code <strong data-field="errorCode"></strong></div>
+            <fieldset class="toggle-field">
+              <legend class="label-head">Vacant preset</legend>
+              <div class="segmented">
+                <button type="button" class="segment" data-action="vacant-preset" data-value="on">On</button>
+                <button type="button" class="segment" data-action="vacant-preset" data-value="off">Off</button>
+              </div>
+            </fieldset>
           </div>
-          <div class="status-strip-power">
-            <div>Energy <strong data-field="electricKwh"></strong></div>
-            <div>Watt <strong data-field="electricWatts"></strong></div>
-            <div>This month <strong data-field="monthTotal"></strong></div>
+        </section>
+
+        <section class="control-section control-section-comfort" aria-label="Comfort settings">
+          <header class="section-head">
+            <div>
+              <span class="section-kicker">Air and temperature</span>
+              <h3>Comfort settings</h3>
+            </div>
+            <p>Changes are sent to the unit as soon as you select them.</p>
+          </header>
+          <div class="triple">
+            <label>
+              <span class="label-head">Target temperature</span>
+              <span class="field-control temperature-control">
+                <input name="temperature" type="number" min="18" max="30" step="0.5">
+                <span class="field-suffix" aria-hidden="true">°C</span>
+              </span>
+            </label>
+
+            <label>
+              <span class="label-head">Mode</span>
+              <select name="mode">
+                <option value="auto">Auto</option>
+                <option value="cool">Cool</option>
+                <option value="heat">Heat</option>
+                <option value="dry">Dry</option>
+                <option value="fan">Fan</option>
+              </select>
+            </label>
+
+            <label>
+              <span class="label-head">Fan</span>
+              <select name="airflow">
+                <option value="auto">Auto</option>
+                <option value="lowest">Lowest</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+                <option value="highest">Highest</option>
+              </select>
+            </label>
           </div>
-        </div>
+
+          <div class="split">
+            <label>
+              <span class="label-head">Vertical vane</span>
+              <select name="windDirectionUD" data-live-action="vane-ud">
+                <option value="0">Up/down auto</option>
+                <option value="1">Highest</option>
+                <option value="2">Middle</option>
+                <option value="3">Normal</option>
+                <option value="4">Lowest</option>
+              </select>
+            </label>
+            <label>
+              <span class="label-head">Horizontal vane</span>
+              <select name="windDirectionLR" data-live-action="vane-lr">
+                <option value="0">Left/right auto</option>
+                <option value="1">Left / left</option>
+                <option value="2">Left / middle</option>
+                <option value="3">Middle / middle</option>
+                <option value="4">Middle / right</option>
+                <option value="5">Right / right</option>
+                <option value="6">Left / right</option>
+                <option value="7">Right / left</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="preset-panel" aria-label="Presets">
+          <div class="preset-head">
+            <div class="preset-title">
+              <span class="section-icon" aria-hidden="true">
+                <svg viewBox="0 0 20 20">
+                  <path d="M5.5 3.5h9v13l-4.5-3-4.5 3v-13Z"></path>
+                </svg>
+              </span>
+              <div>
+                <span class="section-kicker">Saved scenes</span>
+                <h3>Presets</h3>
+                <p>Restore every control with one click.</p>
+              </div>
+            </div>
+            <button type="button" class="secondary preset-save" data-role="save-preset">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M10 4v12M4 10h12"></path>
+              </svg>
+              Save current
+            </button>
+          </div>
+          <div class="preset-list" data-role="preset-list"></div>
+        </section>
 
       </form>
 
-      <p class="error" data-field="error"></p>
+      <p class="error card-error" data-field="error" role="alert"></p>
 
-      <div class="airco-footer">
-        <div><span class="footer-value" data-field="footerId"></span></div>
-        <div><span class="footer-value" data-field="footerAddress"></span></div>
-        <div><span class="footer-label">Update</span><strong data-field="footerUpdate"></strong></div>
-        <div class="power-history" data-field="powerHistory">On since <strong data-field="powerHistoryValue"></strong></div>
-      </div>
+      <footer class="airco-footer" aria-label="Unit details">
+        <div class="footer-detail">
+          <span class="footer-label">Unit</span>
+          <span class="footer-value" data-field="footerId"></span>
+        </div>
+        <div class="footer-detail">
+          <span class="footer-label">Address</span>
+          <span class="footer-value" data-field="footerAddress"></span>
+        </div>
+        <div class="footer-detail footer-updated">
+          <span class="footer-label">Updated</span>
+          <strong data-field="footerUpdate"></strong>
+        </div>
+        <div class="footer-detail power-history" data-field="powerHistory">
+          <span class="footer-label">Running since</span>
+          <strong data-field="powerHistoryValue"></strong>
+        </div>
+      </footer>
     </section>
   </template>
 
   <dialog id="wizard" class="wizard" aria-labelledby="wizardTitle">
     <form method="dialog" class="wizard-form" novalidate>
       <header class="wizard-head">
-        <h2 id="wizardTitle">Add air conditioner</h2>
-        <button type="button" class="icon-button" data-wizard="close" aria-label="Close" title="Close">✕</button>
+        <div>
+          <span class="dialog-kicker">Guided setup</span>
+          <h2 id="wizardTitle">Add air conditioner</h2>
+        </div>
+        <button type="button" class="icon-button" data-wizard="close" aria-label="Close" title="Close">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m5 5 10 10M15 5 5 15"></path>
+          </svg>
+        </button>
       </header>
 
       <ol class="wizard-steps" aria-hidden="true">
@@ -229,11 +369,54 @@
     </form>
   </dialog>
 
+  <dialog id="presetDialog" class="wizard" aria-labelledby="presetDialogTitle">
+    <form method="dialog" class="wizard-form" data-preset="form" novalidate>
+      <header class="wizard-head">
+        <div>
+          <span class="dialog-kicker">Saved scene</span>
+          <h2 id="presetDialogTitle">Save preset</h2>
+          <p data-preset="source"></p>
+        </div>
+        <button type="button" class="icon-button" data-preset="close" aria-label="Close" title="Close">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m5 5 10 10M15 5 5 15"></path>
+          </svg>
+        </button>
+      </header>
+
+      <label>
+        <span class="label-head">Preset name</span>
+        <input name="presetName" type="text" placeholder="For example: Sleep" autocomplete="off" maxlength="40" required>
+      </label>
+
+      <label class="choice preset-global">
+        <input name="presetGlobal" type="checkbox">
+        <span><strong>Available for all air conditioners</strong>
+        <small>Copies these settings to every air conditioner currently configured.</small></span>
+      </label>
+
+      <p class="error wizard-error" data-preset="error" role="alert"></p>
+
+      <footer class="wizard-foot">
+        <span class="wizard-foot-spacer"></span>
+        <button type="button" class="secondary" data-preset="cancel">Cancel</button>
+        <button type="submit" data-preset="save">Save preset</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog id="confirmDelete" class="wizard" aria-labelledby="confirmDeleteTitle">
     <form method="dialog" class="wizard-form" novalidate>
       <header class="wizard-head">
-        <h2 id="confirmDeleteTitle">Delete air conditioner</h2>
-        <button type="button" class="icon-button" data-confirm="close" aria-label="Close" title="Close">✕</button>
+        <div>
+          <span class="dialog-kicker dialog-kicker-danger">Permanent action</span>
+          <h2 id="confirmDeleteTitle">Delete air conditioner</h2>
+        </div>
+        <button type="button" class="icon-button" data-confirm="close" aria-label="Close" title="Close">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m5 5 10 10M15 5 5 15"></path>
+          </svg>
+        </button>
       </header>
 
       <p data-confirm="text"></p>
