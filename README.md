@@ -17,6 +17,8 @@ protocol tooling.
   optionally be copied to every currently configured unit.
 - Tracks power usage history (`data/airco-history.json`), including monthly totals.
 - Interactive protocol-debug tool for reverse-engineering unknown status bytes.
+- Finds WF-RAC units that announce `_beaver._tcp.local`, stores a privacy-preserving
+  discovery identity and follows later IP-address changes automatically.
 - Announces itself with mDNS-SD so integrations such as Homey can discover the bridge
   and follow address changes automatically.
 
@@ -59,8 +61,9 @@ starts it with persistent configuration and history storage.
 Open `http://localhost:3000` and click **"+ Add air conditioner"**. The wizard walks you
 through the rest:
 
-1. Enter the unit's IP address (find it in your router's DHCP client list; tip: give
-   the unit a static lease).
+1. Select a unit found automatically through `_beaver._tcp.local`, or enter its IP
+   address manually from your router's DHCP client list. Units linked through mDNS do
+   not require a static DHCP lease.
 2. Choose how to get access: let the bridge **register itself** on the unit (it
    generates a fresh identity, the same way the Smart M-Air app pairs a phone), or
    enter an existing `deviceId`/`operatorId`.
@@ -86,8 +89,8 @@ docker compose logs -f airco                  # service logs
 curl -s http://localhost:3000/api/aircos      # per-unit "online" and "lastError"
 ```
 
-Common causes: wrong IP, the unit is on a different VLAN/subnet, or the identity is not
-registered on the unit.
+Common causes: the unit is on a different VLAN/subnet, mDNS is blocked, or the operator
+identity is not registered on the unit.
 
 Useful commands:
 
@@ -97,12 +100,17 @@ docker compose down
 make update                     # pull the newest image and restart
 ```
 
-The bridge advertises `_aircobridge._tcp.local` on the LAN by default. Its stable
+The bridge browses for `_beaver._tcp.local` units during setup and startup, and after a
+connection failure. It hashes each service identity before storing it; when the unit's
+address changes, the runtime and file configuration are updated and the request is
+retried once. The bridge also advertises `_aircobridge._tcp.local` on the LAN by
+default. Its stable
 identity is generated once in `data/bridge-id`; keep the `data` directory when moving
 or updating an installation. If the host has VPN, NetBird, Docker or other virtual
 interfaces, set `AIRCO_MDNS_INTERFACE` in `.env` to the physical LAN interface name
 (for example `eth0`) or its host IP. Comma-separated values are also accepted. Set
-`AIRCO_MDNS_ENABLED=0` only when discovery is intentionally disabled.
+`AIRCO_MDNS_ENABLED=0` only when both unit discovery and bridge advertisement are
+intentionally disabled; the setup wizard then falls back to manual address entry.
 
 Host networking is supported natively by Docker Engine on Linux. Docker Desktop users
 must enable host networking in Docker Desktop 4.34 or newer. The configured

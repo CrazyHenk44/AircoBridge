@@ -70,11 +70,19 @@ AIRCO_HTTP_PORT=3000
 AIRCO_MDNS_INTERFACE=eth0
 ```
 
-Leave `AIRCO_MDNS_INTERFACE` empty to advertise on all network interfaces. On hosts
-with NetBird, VPN or other virtual interfaces, set it to the physical LAN interface
-name or host IP. Set `AIRCO_MDNS_ENABLED=0` to disable discovery while keeping manual
-HTTP access available. The persistent discovery identity is stored in
+Leave `AIRCO_MDNS_INTERFACE` empty to browse and advertise on all network interfaces.
+On hosts with NetBird, VPN or other virtual interfaces, set it to the physical LAN
+interface name or host IP. Set `AIRCO_MDNS_ENABLED=0` to disable both WF-RAC browsing
+and bridge advertisement while keeping manual HTTP setup available. The persistent
+discovery identity is stored in
 `data/bridge-id`; override that path outside Docker with `AIRCO_BRIDGE_ID_FILE`.
+
+When a configured unit can be matched to a `_beaver._tcp.local` service, the bridge
+adds a hashed `discoveryId` to that unit in `config/aircos.json`. It never stores the
+underlying service name or MAC address. On startup and after connection failures, this
+identifier is used to update a changed `ip` and `port` automatically. Environment-only
+configuration cannot be rewritten, so include the learned `discoveryId` yourself or
+use file-based configuration when address persistence is required.
 
 Compose uses `ghcr.io/crazyhenk44/aircobridge:latest` by default. To build and run the
 current source tree instead, use `make up-local`. Set `AIRCO_IMAGE` in `.env` to pin a

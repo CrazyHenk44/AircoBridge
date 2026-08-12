@@ -297,7 +297,16 @@
       </ol>
 
       <section class="wizard-step" data-step="connect">
-        <p>Enter the air conditioner's IP address. You can find it in your router's DHCP client list.</p>
+        <p>Select an air conditioner found on your network, or enter its address manually.</p>
+        <div class="wizard-discovery">
+          <div class="wizard-discovery-head">
+            <span data-wizard="discoveryStatus" role="status">Searching via mDNS...</span>
+            <button type="button" class="secondary compact" data-wizard="scan">Scan again</button>
+          </div>
+          <div class="choice-group discovered-units is-hidden" data-wizard="discovered"
+               role="radiogroup" aria-label="Discovered air conditioners"></div>
+        </div>
+        <div class="wizard-or"><span>Manual address</span></div>
         <label>
           <span class="label-head">IP address</span>
           <input name="wizardIp" type="text" inputmode="decimal" placeholder="192.168.1.100" autocomplete="off" required>

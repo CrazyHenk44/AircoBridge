@@ -1053,6 +1053,63 @@ select {
   font-size: 13.5px;
 }
 
+.wizard-discovery {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.wizard-discovery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.wizard-discovery-head button.compact {
+  min-height: 30px;
+  padding: 6px 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.discovered-units {
+  gap: 7px;
+}
+
+.discovered-units .choice {
+  padding: 10px 11px;
+}
+
+.discovered-units .choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.wizard-or {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted-soft);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wizard-or::before,
+.wizard-or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
 .wizard-advanced {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);

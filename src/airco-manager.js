@@ -42,6 +42,7 @@ class AircoRuntime {
     this.timer = null;
     this.queue = Promise.resolve();
     this.vacantPresetRestoreState = null;
+    this.addressRecovery = null;
   }
 
   publicConfig() {
@@ -51,6 +52,7 @@ class AircoRuntime {
       ip: this.config.ip,
       port: this.config.port,
       airconId: this.config.airconId,
+      addressManaged: Boolean(this.config.discoveryId),
       httpsMode: this.config.httpsMode,
       pollIntervalMs: this.config.pollIntervalMs,
     };
@@ -70,7 +72,9 @@ class AircoRuntime {
     return normalizeSnapshotForApi(value);
   }
 
-  async refresh() {
+  async refresh({ recoverAddress = true } = {}) {
+    const attemptedIp = this.client.ip;
+    const attemptedPort = this.client.port;
     try {
       const { raw, status } = await this.client.getStatus();
       this.raw = raw;
@@ -81,10 +85,34 @@ class AircoRuntime {
       this.historyStore.recordPoll(this.config.id, status);
       return this.snapshot();
     } catch (err) {
+      const endpointChanged = this.client.ip !== attemptedIp || this.client.port !== attemptedPort;
+      if (recoverAddress && (endpointChanged || await this.tryAddressRecovery(err))) {
+        return this.refresh({ recoverAddress: false });
+      }
       this.lastError = toError(err);
       this.online = false;
       throw err;
     }
+  }
+
+  async tryAddressRecovery(originalError) {
+    if (!this.addressRecovery) return false;
+    try {
+      return await this.addressRecovery(this.config, originalError);
+    } catch (recoveryError) {
+      console.warn(`mDNS address recovery failed for ${this.config.id}: ${recoveryError.message || recoveryError}`);
+      return false;
+    }
+  }
+
+  updateEndpoint({ ip, port }) {
+    const normalizedPort = Number(port);
+    if (this.config.ip === ip && Number(this.config.port) === normalizedPort) return false;
+    this.config.ip = ip;
+    this.config.port = normalizedPort;
+    this.client.ip = ip;
+    this.client.port = normalizedPort;
+    return true;
   }
 
   enqueue(action) {
@@ -94,12 +122,24 @@ class AircoRuntime {
   }
 
   async update(mutator) {
-    return this.enqueue(async () => {
+    return this.enqueue(() => this.performUpdate(mutator));
+  }
+
+  async performUpdate(mutator, { recoverAddress = true } = {}) {
+    const attemptedIp = this.client.ip;
+    const attemptedPort = this.client.port;
+    try {
       const { status } = await this.client.getStatus();
       await mutator(status);
       await this.client.setStatus(status);
       return this.refresh();
-    });
+    } catch (err) {
+      const endpointChanged = this.client.ip !== attemptedIp || this.client.port !== attemptedPort;
+      if (recoverAddress && (endpointChanged || await this.tryAddressRecovery(err))) {
+        return this.performUpdate(mutator, { recoverAddress: false });
+      }
+      throw err;
+    }
   }
 
   start() {
@@ -118,6 +158,7 @@ class AircoRuntime {
 class AircoManager {
   constructor(configs, historyFile = "data/airco-history.json") {
     this.historyStore = new HistoryStore(historyFile);
+    this.addressRecovery = null;
     this.aircos = new Map(configs.map((config) => [config.id, new AircoRuntime(config, this.historyStore)]));
   }
 
@@ -151,6 +192,7 @@ class AircoManager {
   add(config) {
     if (this.aircos.has(config.id)) throw new Error(`Air conditioner already exists: ${config.id}`);
     const runtime = new AircoRuntime(config, this.historyStore);
+    runtime.addressRecovery = this.addressRecovery;
     this.aircos.set(config.id, runtime);
     runtime.start();
     return runtime;
@@ -166,6 +208,15 @@ class AircoManager {
 
   configs() {
     return [...this.aircos.values()].map((runtime) => runtime.config);
+  }
+
+  setAddressRecovery(handler) {
+    this.addressRecovery = handler;
+    for (const runtime of this.aircos.values()) runtime.addressRecovery = handler;
+  }
+
+  updateEndpoint(id, endpoint) {
+    return this.get(id).updateEndpoint(endpoint);
   }
 
   get(id) {

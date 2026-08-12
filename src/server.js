@@ -3,12 +3,14 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { createAddressReconciler } = require("./address-reconciler");
 const { AircoManager } = require("./airco-manager");
 const { loadOrCreateBridgeId } = require("./bridge-identity");
 const { loadConfig, normalizeAirco, appendAircoToFile, removeAircoFromFile } = require("./config");
 const { startDiscovery } = require("./discovery");
 const { PresetStore } = require("./preset-store");
 const { BRIDGE_DEVICE_PREFIX, probeUnit, registerOperator, unregisterOperator, testConnection } = require("./registration");
+const { createUnitDiscoverer } = require("./unit-discovery");
 const { version: BRIDGE_VERSION } = require("../package.json");
 
 const PUBLIC_DIR = path.join(__dirname, "..", "public");
@@ -242,6 +244,7 @@ async function addAirco(res, manager, configFile, body) {
     deviceId: String(body.deviceId || "").trim(),
     operatorId: String(body.operatorId || "").trim(),
     airconId: body.airconId ? String(body.airconId).trim() : "1",
+    discoveryId: body.discoveryId ? String(body.discoveryId).trim().toLowerCase() : undefined,
     httpsMode: body.httpsMode === undefined ? true : Boolean(body.httpsMode),
     pollIntervalMs: 30000,
     timeoutMs: 10000,
@@ -296,7 +299,7 @@ async function deleteAirco(res, manager, configFile, presetStore, runtime) {
   return sendJson(res, 200, { removed: config.id, accountDeleted });
 }
 
-async function routeApi(req, res, manager, configFile, presetStore, bridgeId) {
+async function routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer) {
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
 
@@ -307,6 +310,7 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId) {
       apiVersion: 1,
       features: {
         discovery: Boolean(bridgeId),
+        unitDiscovery: Boolean(unitDiscoverer),
         presets: true,
         globalPresets: true,
       },
@@ -321,6 +325,19 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId) {
       presets: presetStore.list(item.airco.id),
     }));
     return sendJson(res, 200, { aircos });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/setup/discover") {
+    if (!unitDiscoverer) return sendJson(res, 200, { units: [], disabled: true });
+    const configured = typeof manager.configs === "function" ? manager.configs() : [];
+    const units = (await unitDiscoverer()).map((unit) => ({
+      ...unit,
+      configured: configured.some((airco) => (
+        (unit.discoveryId && airco.discoveryId === unit.discoveryId)
+          || (airco.ip === unit.ip && Number(airco.port) === unit.port)
+      )),
+    }));
+    return sendJson(res, 200, { units });
   }
 
   if (req.method === "POST" && parts[0] === "api" && parts[1] === "setup" && parts[2]) {
@@ -431,10 +448,13 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId) {
   return sendJson(res, 200, result);
 }
 
-function createServer(manager, { configFile = null, presetStore = new PresetStore(), bridgeId = null } = {}) {
+function createServer(
+  manager,
+  { configFile = null, presetStore = new PresetStore(), bridgeId = null, unitDiscoverer = null } = {}
+) {
   return http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
-      routeApi(req, res, manager, configFile, presetStore, bridgeId).catch((err) => sendError(res, err));
+      routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer).catch((err) => sendError(res, err));
       return;
     }
     serveStatic(req, res);
@@ -462,11 +482,28 @@ async function main() {
   const bridgeId = loadOrCreateBridgeId(config.discovery.idFile);
   const manager = new AircoManager(config.aircos, config.historyFile);
   const presetStore = new PresetStore(config.presetsFile);
-  const server = createServer(manager, { configFile: config.configFile, presetStore, bridgeId });
+  const unitDiscoverer = config.discovery.enabled
+    ? createUnitDiscoverer({ interfaces: config.discovery.interfaces })
+    : null;
+  const addressReconciler = unitDiscoverer
+    ? createAddressReconciler(manager, { discoverUnits: unitDiscoverer, configFile: config.configFile })
+    : null;
+  if (addressReconciler) manager.setAddressRecovery((airco) => addressReconciler.recover(airco));
+  const server = createServer(manager, {
+    configFile: config.configFile,
+    presetStore,
+    bridgeId,
+    unitDiscoverer,
+  });
 
   manager.start();
   await listen(server, config.server.port, config.server.host);
   console.log(`airco service listening on http://${config.server.host}:${config.server.port}`);
+  if (addressReconciler) {
+    addressReconciler.reconcile({ force: true }).catch((err) => {
+      console.warn(`Initial WF-RAC mDNS reconciliation failed: ${err.message || err}`);
+    });
+  }
 
   let discovery = null;
   if (config.discovery.enabled) {

@@ -22,6 +22,10 @@ function parseList(value) {
 
 function normalizeAirco(raw, idx) {
   const id = raw.id || raw.name || `airco-${idx + 1}`;
+  const discoveryId = raw.discoveryId ? String(raw.discoveryId).trim().toLowerCase() : null;
+  if (discoveryId && !/^[0-9a-f]{64}$/.test(discoveryId)) {
+    throw new Error(`aircos[${idx}].discoveryId must be a SHA-256 identifier`);
+  }
   const airco = {
     id: String(id),
     name: raw.name || String(id),
@@ -30,6 +34,7 @@ function normalizeAirco(raw, idx) {
     deviceId: raw.deviceId,
     operatorId: raw.operatorId,
     airconId: raw.airconId === undefined ? "1" : String(raw.airconId),
+    discoveryId,
     httpsMode: raw.httpsMode === undefined ? true : Boolean(raw.httpsMode),
     pollIntervalMs: parseIntValue(raw.pollIntervalMs, 30000),
     timeoutMs: parseIntValue(raw.timeoutMs, 10000),
@@ -111,4 +116,32 @@ function removeAircoFromFile(configFile, id) {
   fs.writeFileSync(configFile, `${JSON.stringify(raw, null, 2)}\n`);
 }
 
-module.exports = { loadConfig, normalizeAirco, appendAircoToFile, removeAircoFromFile };
+function updateAircosInFile(configFile, updates) {
+  if (!configFile || updates.length === 0) return;
+  const raw = JSON.parse(fs.readFileSync(configFile, "utf8"));
+  if (!Array.isArray(raw.aircos)) return;
+  const byId = new Map(updates.map(({ id, patch }) => [String(id), patch]));
+  let changed = false;
+
+  raw.aircos.forEach((airco, idx) => {
+    const id = String(airco.id || airco.name || `airco-${idx + 1}`);
+    const patch = byId.get(id);
+    if (!patch) return;
+    for (const [field, value] of Object.entries(patch)) {
+      if (airco[field] !== value) {
+        airco[field] = value;
+        changed = true;
+      }
+    }
+  });
+
+  if (changed) fs.writeFileSync(configFile, `${JSON.stringify(raw, null, 2)}\n`);
+}
+
+module.exports = {
+  loadConfig,
+  normalizeAirco,
+  appendAircoToFile,
+  removeAircoFromFile,
+  updateAircosInFile,
+};

@@ -86,12 +86,50 @@ test("server advertises API capabilities without changing legacy routes", async 
   assert.equal(info.apiVersion, 1);
   assert.equal(info.bridgeId, bridgeId);
   assert.equal(info.features.discovery, true);
+  assert.equal(info.features.unitDiscovery, false);
   assert.equal(info.features.presets, true);
   assert.equal(info.features.globalPresets, true);
 
   const legacyResponse = await dispatch(server, { url: "/api/aircos" });
   assert.equal(legacyResponse.statusCode, 200);
   assert.deepEqual(JSON.parse(legacyResponse.body), { aircos: [] });
+});
+
+test("server exposes discovered WF-RAC units and marks configured addresses", async () => {
+  const existingDiscoveryId = "a".repeat(64);
+  const newDiscoveryId = "b".repeat(64);
+  const manager = {
+    configs: () => [{ ip: "192.168.1.50", port: 51443, discoveryId: existingDiscoveryId }],
+  };
+  const unitDiscoverer = async () => [
+    { name: "Mitsubishi WF-RAC existing", discoveryId: existingDiscoveryId, ip: "192.168.1.50", port: 51443 },
+    { name: "Mitsubishi WF-RAC new", discoveryId: newDiscoveryId, ip: "192.168.1.198", port: 51443 },
+  ];
+  const server = createServer(manager, { unitDiscoverer });
+
+  const response = await dispatch(server, { url: "/api/setup/discover" });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(JSON.parse(response.body), {
+    units: [
+      {
+        name: "Mitsubishi WF-RAC existing",
+        discoveryId: existingDiscoveryId,
+        ip: "192.168.1.50",
+        port: 51443,
+        configured: true,
+      },
+      {
+        name: "Mitsubishi WF-RAC new",
+        discoveryId: newDiscoveryId,
+        ip: "192.168.1.198",
+        port: 51443,
+        configured: false,
+      },
+    ],
+  });
+
+  const infoResponse = await dispatch(server, { url: "/api/info" });
+  assert.equal(JSON.parse(infoResponse.body).features.unitDiscovery, true);
 });
 
 test("server saves a global preset per air conditioner and applies it separately", async (t) => {

@@ -14,11 +14,12 @@ Returns bridge and API metadata for integrations that may be newer than the serv
 ```json
 {
   "name": "AircoBridge",
-  "bridgeVersion": "1.2.0",
+  "bridgeVersion": "1.3.0",
   "bridgeId": "71bc0a85-836d-4ed7-94bb-8ff12193f378",
   "apiVersion": 1,
   "features": {
     "discovery": true,
+    "unitDiscovery": true,
     "presets": true,
     "globalPresets": true
   }
@@ -28,6 +29,8 @@ Returns bridge and API metadata for integrations that may be newer than the serv
 `bridgeId` is generated once and remains stable when the host address changes. LAN
 integrations use it to match the HTTP API to the `_aircobridge._tcp.local` mDNS-SD
 service. It is an installation identifier, not an air-conditioner credential.
+`unitDiscovery` reports whether the setup endpoint can browse for
+`_beaver._tcp.local` units.
 
 Clients should detect optional functionality through `features`, not by comparing
 version strings. A `404` from this endpoint identifies a legacy server; clients can
@@ -42,6 +45,8 @@ carries `bridgeManagedIdentity` (the bridge created this identity itself) and
 `identityShared` (another configured unit uses the same identity); the UI uses these to
 predict whether deleting the unit will also remove its account (see `DELETE`). Every
 item also has a `presets` array containing that unit's named presets.
+`airco.addressManaged` is true when the bridge can re-resolve the unit through mDNS
+after its IP address changes.
 
 ### `GET /api/aircos/:id`
 
@@ -197,7 +202,32 @@ Deletes the selected preset only from that unit.
 ## Setup endpoints
 
 These power the setup wizard in the web UI; you can also call them directly. All
-take a JSON body with at least `ip` (and optionally `port`, default `51443`).
+write endpoints take a JSON body with at least `ip` (and optionally `port`, default
+`51443`).
+
+### `GET /api/setup/discover`
+
+Browses the local IPv4 network for `_beaver._tcp.local` services for about two seconds:
+
+```json
+{
+  "units": [
+    {
+      "name": "Mitsubishi WF-RAC",
+      "discoveryId": "0000000000000000000000000000000000000000000000000000000000000000",
+      "ip": "192.168.1.50",
+      "port": 51443,
+      "configured": false
+    }
+  ]
+}
+```
+
+`discoveryId` is a SHA-256 hash of the stable DNS-SD instance identity; the underlying
+service name (which can contain a MAC address) is not exposed or stored. `configured`
+is true when either that identity or its current endpoint is already present in the
+bridge configuration. With `AIRCO_MDNS_ENABLED=0`, this endpoint returns
+`{ "units": [], "disabled": true }` and manual setup remains available.
 
 ### `POST /api/setup/probe`
 

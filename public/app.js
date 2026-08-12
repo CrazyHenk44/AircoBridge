@@ -452,11 +452,13 @@ const wizardState = {
   step: "connect",
   ip: "",
   port: 51443,
+  discoveryId: null,
   probed: null,
   identity: null,
   registeredHere: false,
   saved: false,
   busy: false,
+  discoveryGeneration: 0,
 };
 
 const STEP_ORDER = ["connect", "credentials", "test", "name", "done"];
@@ -521,19 +523,111 @@ function showWizardStep(step) {
 }
 
 function resetWizard() {
+  wizardState.discoveryGeneration += 1;
   wizardState.ip = "";
   wizardState.port = 51443;
+  wizardState.discoveryId = null;
   wizardState.probed = null;
   wizardState.identity = null;
   wizardState.registeredHere = false;
   wizardState.saved = false;
   wizardState.busy = false;
   wizardForm.reset();
+  wizardEl("discovered").replaceChildren();
+  wizardEl("discovered").classList.add("is-hidden");
+  wizardEl("discoveryStatus").textContent = "Searching via mDNS...";
+  wizardEl("scan").disabled = false;
   wizardEl("found").classList.add("is-hidden");
   wizardEl("reuseFields").classList.add("is-hidden");
   wizardEl("testResult").classList.add("is-hidden");
   setWizardBusy(false);
   showWizardStep("connect");
+}
+
+function selectDiscoveredUnit(unit, radio) {
+  if (unit.configured) return;
+  radio.checked = true;
+  wizardInput("wizardIp").value = unit.ip;
+  wizardInput("wizardPort").value = unit.port;
+  wizardState.discoveryId = unit.discoveryId;
+  wizardEl("found").classList.add("is-hidden");
+  wizardError("");
+}
+
+function renderDiscoveredUnits(units) {
+  const container = wizardEl("discovered");
+  const available = units.filter((unit) => !unit.configured);
+  const choices = units.map((unit, index) => {
+    const label = document.createElement("label");
+    label.className = "choice";
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "discoveredUnit";
+    radio.value = String(index);
+    radio.dataset.ip = unit.ip;
+    radio.dataset.port = String(unit.port);
+    radio.dataset.discoveryId = unit.discoveryId;
+    radio.disabled = Boolean(unit.configured);
+    radio.addEventListener("change", () => selectDiscoveredUnit(unit, radio));
+
+    const copy = document.createElement("span");
+    const name = document.createElement("strong");
+    name.textContent = unit.name || "Mitsubishi WF-RAC";
+    const address = document.createElement("small");
+    address.textContent = `${unit.ip}:${unit.port}${unit.configured ? " · Already added" : ""}`;
+    copy.append(name, address);
+    label.append(radio, copy);
+    return label;
+  });
+
+  container.replaceChildren(...choices);
+  container.classList.toggle("is-hidden", choices.length === 0);
+  wizardEl("discoveryStatus").textContent = units.length === 0
+    ? "No air conditioners found via mDNS."
+    : `${units.length} air conditioner${units.length === 1 ? "" : "s"} found via mDNS.`;
+
+  const selectedAddress = [...container.querySelectorAll("input:not(:disabled)")].find((radio) => (
+    radio.dataset.ip === wizardInput("wizardIp").value.trim()
+      && radio.dataset.port === wizardInput("wizardPort").value
+  ));
+  if (selectedAddress) {
+    selectedAddress.checked = true;
+    wizardState.discoveryId = selectedAddress.dataset.discoveryId;
+  } else {
+    wizardState.discoveryId = null;
+  }
+  if (!selectedAddress && !wizardInput("wizardIp").value && available.length === 1) {
+    const index = units.indexOf(available[0]);
+    selectDiscoveredUnit(available[0], container.querySelector(`input[value="${index}"]`));
+  }
+}
+
+async function discoverWizardUnits() {
+  const generation = ++wizardState.discoveryGeneration;
+  const scan = wizardEl("scan");
+  scan.disabled = true;
+  scan.textContent = "Scanning...";
+  wizardEl("discoveryStatus").textContent = "Searching via mDNS...";
+
+  try {
+    const result = await request("/api/setup/discover");
+    if (generation !== wizardState.discoveryGeneration || !wizard.open) return;
+    if (result.disabled) {
+      wizardEl("discoveryStatus").textContent = "Automatic discovery is disabled; enter the address manually.";
+      return;
+    }
+    renderDiscoveredUnits(result.units || []);
+  } catch {
+    if (generation === wizardState.discoveryGeneration && wizard.open) {
+      wizardEl("discoveryStatus").textContent = "Automatic discovery is unavailable; enter the address manually.";
+    }
+  } finally {
+    if (generation === wizardState.discoveryGeneration) {
+      scan.disabled = false;
+      scan.textContent = "Scan again";
+    }
+  }
 }
 
 async function cleanupUnsavedRegistration() {
@@ -670,6 +764,7 @@ async function wizardSave() {
         name,
         ip: wizardState.ip,
         port: wizardState.port,
+        discoveryId: wizardState.discoveryId,
         ...wizardState.identity,
       }),
     });
@@ -723,9 +818,26 @@ wizard.querySelectorAll('[name="credMode"]').forEach((radio) => {
   });
 });
 
+wizardEl("scan").addEventListener("click", discoverWizardUnits);
+
+function clearMismatchedDiscoverySelection() {
+  const selected = wizard.querySelector('[name="discoveredUnit"]:checked');
+  if (!selected) return;
+  const matches = selected.dataset.ip === wizardInput("wizardIp").value.trim()
+    && selected.dataset.port === wizardInput("wizardPort").value;
+  if (!matches) {
+    selected.checked = false;
+    wizardState.discoveryId = null;
+  }
+}
+
+wizardInput("wizardIp").addEventListener("input", clearMismatchedDiscoverySelection);
+wizardInput("wizardPort").addEventListener("input", clearMismatchedDiscoverySelection);
+
 addAirco.addEventListener("click", () => {
   resetWizard();
   wizard.showModal();
+  discoverWizardUnits();
 });
 
 // ---------------------------------------------------------------------------

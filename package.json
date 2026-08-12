@@ -1,6 +1,6 @@
 {
   "name": "airco-bridge",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "private": true,
   "description": "Local HTTP bridge and web UI for Mitsubishi Heavy Industries Smart M-Air / WF-RAC air conditioners",
   "main": "src/server.js",
@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@homebridge/ciao": "1.3.10",
-    "axios": "^1.18.1"
+    "axios": "^1.18.1",
+    "bonjour-service": "1.4.3"
   }
 }
