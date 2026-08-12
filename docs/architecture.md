@@ -3,6 +3,8 @@
 ## Files
 
 - `src/server.js`: HTTP server, REST routing and static file serving (no framework).
+- `src/bridge-identity.js`: creates and loads the persistent discovery identity.
+- `src/discovery.js`: advertises the bridge as `_aircobridge._tcp.local` over mDNS-SD.
 - `src/wfrac.js`: the WF-RAC/Beaver protocol implementation (`WfracClient`,
   `WfracStatus`, packet building, CRC, parsing).
 - `src/airco-manager.js`: keeps per-unit status, errors and update times;
@@ -22,7 +24,10 @@
 - Every write is a read-modify-write cycle: read `getAirconStat`, parse, mutate only the
   intended fields, rebuild the packet with CRC and send `setAirconStat`. See
   `docs/mitsubishi-airco.md` for the protocol flow.
-- The only runtime dependency is `axios`; the server uses Node's built-in `http`.
+- Runtime dependencies are `axios` for WF-RAC requests and `@homebridge/ciao` for
+  mDNS-SD; the server itself uses Node's built-in `http`.
+- The recommended Docker Compose setup uses host networking because mDNS is link-local
+  multicast traffic and does not cross Docker's normal bridge network automatically.
 
 ## Scope
 

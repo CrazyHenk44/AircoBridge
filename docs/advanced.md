@@ -61,11 +61,20 @@ automatically from the polled status and stored in `data/airco-history.json` (ov
 with `AIRCO_HISTORY_FILE`). Named presets are stored in `data/airco-presets.json`
 (override with `AIRCO_PRESETS_FILE`).
 
-For Docker Compose, the host HTTP port is set through `.env`:
+For Docker Compose, the HTTP bind address, host port and optional mDNS interface are set
+through `.env`. Compose uses host networking, so the port is not translated by Docker:
 
 ```sh
+AIRCO_HTTP_BIND=0.0.0.0
 AIRCO_HTTP_PORT=3000
+AIRCO_MDNS_INTERFACE=eth0
 ```
+
+Leave `AIRCO_MDNS_INTERFACE` empty to advertise on all network interfaces. On hosts
+with NetBird, VPN or other virtual interfaces, set it to the physical LAN interface
+name or host IP. Set `AIRCO_MDNS_ENABLED=0` to disable discovery while keeping manual
+HTTP access available. The persistent discovery identity is stored in
+`data/bridge-id`; override that path outside Docker with `AIRCO_BRIDGE_ID_FILE`.
 
 Compose uses `ghcr.io/crazyhenk44/aircobridge:latest` by default. To build and run the
 current source tree instead, use `make up-local`. Set `AIRCO_IMAGE` in `.env` to pin a
@@ -78,7 +87,9 @@ Without Compose:
 ```sh
 docker build -t airco .
 docker run --rm \
-  -p 127.0.0.1:3000:3000 \
+  --network host \
+  -e HOST=0.0.0.0 \
+  -e AIRCO_MDNS_INTERFACE=eth0 \
   -v "$PWD/config:/app/config" \
   -v "$PWD/data:/app/data" \
   airco

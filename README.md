@@ -17,6 +17,8 @@ protocol tooling.
   optionally be copied to every currently configured unit.
 - Tracks power usage history (`data/airco-history.json`), including monthly totals.
 - Interactive protocol-debug tool for reverse-engineering unknown status bytes.
+- Announces itself with mDNS-SD so integrations such as Homey can discover the bridge
+  and follow address changes automatically.
 
 ## Supported hardware
 
@@ -40,7 +42,8 @@ report whether it works (include the model and firmware versions from
 
 You need Docker with the Compose plugin, and a WF-RAC unit that is already on your
 Wi-Fi (set up once with the Smart M-Air app). The published image supports AMD64 and
-ARM64 systems. The recommended setup uses the included Compose file:
+ARM64 Linux systems. The recommended setup uses the included Compose file and Docker's
+host network mode so mDNS discovery reaches the physical LAN:
 
 ```sh
 git clone https://github.com/CrazyHenk44/AircoBridge.git
@@ -51,7 +54,7 @@ docker compose up -d
 
 `docker compose up -d` automatically pulls
 `ghcr.io/crazyhenk44/aircobridge:latest` (equivalent to running `docker pull`), then
-starts it with persistent configuration, history storage and the correct port mapping.
+starts it with persistent configuration and history storage.
 
 Open `http://localhost:3000` and click **"+ Add air conditioner"**. The wizard walks you
 through the rest:
@@ -94,13 +97,30 @@ docker compose down
 make update                     # pull the newest image and restart
 ```
 
+The bridge advertises `_aircobridge._tcp.local` on the LAN by default. Its stable
+identity is generated once in `data/bridge-id`; keep the `data` directory when moving
+or updating an installation. If the host has VPN, NetBird, Docker or other virtual
+interfaces, set `AIRCO_MDNS_INTERFACE` in `.env` to the physical LAN interface name
+(for example `eth0`) or its host IP. Comma-separated values are also accepted. Set
+`AIRCO_MDNS_ENABLED=0` only when discovery is intentionally disabled.
+
+Host networking is supported natively by Docker Engine on Linux. Docker Desktop users
+must enable host networking in Docker Desktop 4.34 or newer. The configured
+`AIRCO_HTTP_PORT` is the actual host port in this mode, so it must be free.
+
+When upgrading an existing Compose installation, check `.env`: older releases created
+`AIRCO_HTTP_BIND=127.0.0.1`, which must be changed to `0.0.0.0` or the host's physical
+LAN IP for Homey and other LAN clients to connect. Then recreate the container with
+`make update` (published image) or `make up-local` (local source).
+
 History is stored in `data/airco-history.json`, and presets in
 `data/airco-presets.json`. Override the paths with `AIRCO_HISTORY_FILE` and
 `AIRCO_PRESETS_FILE` if needed.
 
-By default, Compose binds the web UI to `127.0.0.1` only. If you intentionally want to
-expose it on your LAN, set `AIRCO_HTTP_BIND=0.0.0.0` in `.env` and protect access at
-the network layer.
+By default, Compose binds the web UI to all host interfaces so LAN integrations can
+reach it. To limit both HTTP and discovery to the physical LAN on a multi-homed host,
+set `AIRCO_HTTP_BIND` to that host IP and set `AIRCO_MDNS_INTERFACE` to the matching IP
+or interface name. Protect access at the network layer.
 
 ## REST API
 
@@ -113,8 +133,9 @@ curl -X POST http://localhost:3000/api/aircos/living-room/power \
 ```
 
 See [docs/api.md](docs/api.md) for the full endpoint reference.
-Integrations can use `GET /api/info` to detect optional bridge features such as
-presets while remaining compatible with older server versions.
+Integrations can use `GET /api/info` to read the stable `bridgeId` and detect optional
+bridge features such as discovery and presets while remaining compatible with older
+server versions.
 
 ## Documentation
 

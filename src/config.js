@@ -12,6 +12,14 @@ function parseIntValue(value, defaultValue) {
   return Number.isFinite(n) ? n : defaultValue;
 }
 
+function parseList(value) {
+  if (value === undefined || value === null) return [];
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function normalizeAirco(raw, idx) {
   const id = raw.id || raw.name || `airco-${idx + 1}`;
   const airco = {
@@ -79,6 +87,11 @@ function loadConfig() {
     },
     historyFile: process.env.AIRCO_HISTORY_FILE || server.historyFile || "data/airco-history.json",
     presetsFile: process.env.AIRCO_PRESETS_FILE || server.presetsFile || "data/airco-presets.json",
+    discovery: {
+      enabled: parseBool(process.env.AIRCO_MDNS_ENABLED, true),
+      idFile: process.env.AIRCO_BRIDGE_ID_FILE || server.bridgeIdFile || "data/bridge-id",
+      interfaces: parseList(process.env.AIRCO_MDNS_INTERFACE || server.mdnsInterface),
+    },
     aircos,
     configFile,
   };

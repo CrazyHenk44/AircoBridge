@@ -4,7 +4,9 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { AircoManager } = require("./airco-manager");
+const { loadOrCreateBridgeId } = require("./bridge-identity");
 const { loadConfig, normalizeAirco, appendAircoToFile, removeAircoFromFile } = require("./config");
+const { startDiscovery } = require("./discovery");
 const { PresetStore } = require("./preset-store");
 const { BRIDGE_DEVICE_PREFIX, probeUnit, registerOperator, unregisterOperator, testConnection } = require("./registration");
 const { version: BRIDGE_VERSION } = require("../package.json");
@@ -294,20 +296,23 @@ async function deleteAirco(res, manager, configFile, presetStore, runtime) {
   return sendJson(res, 200, { removed: config.id, accountDeleted });
 }
 
-async function routeApi(req, res, manager, configFile, presetStore) {
+async function routeApi(req, res, manager, configFile, presetStore, bridgeId) {
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
 
   if (req.method === "GET" && url.pathname === "/api/info") {
-    return sendJson(res, 200, {
+    const info = {
       name: "AircoBridge",
       bridgeVersion: BRIDGE_VERSION,
       apiVersion: 1,
       features: {
+        discovery: Boolean(bridgeId),
         presets: true,
         globalPresets: true,
       },
-    });
+    };
+    if (bridgeId) info.bridgeId = bridgeId;
+    return sendJson(res, 200, info);
   }
 
   if (req.method === "GET" && url.pathname === "/api/aircos") {
@@ -426,43 +431,79 @@ async function routeApi(req, res, manager, configFile, presetStore) {
   return sendJson(res, 200, result);
 }
 
-function createServer(manager, { configFile = null, presetStore = new PresetStore() } = {}) {
+function createServer(manager, { configFile = null, presetStore = new PresetStore(), bridgeId = null } = {}) {
   return http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
-      routeApi(req, res, manager, configFile, presetStore).catch((err) => sendError(res, err));
+      routeApi(req, res, manager, configFile, presetStore, bridgeId).catch((err) => sendError(res, err));
       return;
     }
     serveStatic(req, res);
   });
 }
 
-function main() {
+function listen(server, port, host) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+async function closeServer(server) {
+  await new Promise((resolve, reject) => {
+    server.close((err) => (err ? reject(err) : resolve()));
+  });
+}
+
+async function main() {
   const config = loadConfig();
+  const bridgeId = loadOrCreateBridgeId(config.discovery.idFile);
   const manager = new AircoManager(config.aircos, config.historyFile);
   const presetStore = new PresetStore(config.presetsFile);
-  const server = createServer(manager, { configFile: config.configFile, presetStore });
+  const server = createServer(manager, { configFile: config.configFile, presetStore, bridgeId });
 
   manager.start();
+  await listen(server, config.server.port, config.server.host);
+  console.log(`airco service listening on http://${config.server.host}:${config.server.port}`);
 
-  server.listen(config.server.port, config.server.host, () => {
-    console.log(`airco service listening on http://${config.server.host}:${config.server.port}`);
-  });
+  let discovery = null;
+  if (config.discovery.enabled) {
+    try {
+      discovery = await startDiscovery({
+        bridgeId,
+        port: config.server.port,
+        version: BRIDGE_VERSION,
+        interfaces: config.discovery.interfaces,
+      });
+      const target = discovery.interfaces.length > 0
+        ? ` on ${discovery.interfaces.join(", ")}`
+        : "";
+      console.log(`mDNS discovery advertising ${discovery.serviceName}${target}`);
+    } catch (err) {
+      console.error(`mDNS discovery could not be started: ${err.message || err}`);
+    }
+  }
 
-  const shutdown = () => {
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     manager.stop();
-    server.close(() => process.exit(0));
+    if (discovery) await discovery.stop().catch((err) => console.error(`mDNS shutdown failed: ${err.message || err}`));
+    await closeServer(server);
+    process.exit(0);
   };
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+  process.once("SIGINT", shutdown);
 }
 
 if (require.main === module) {
-  try {
-    main();
-  } catch (err) {
+  main().catch((err) => {
     console.error(err.stack || err.message || err);
     process.exit(1);
-  }
+  });
 }
 
 module.exports = { createServer };

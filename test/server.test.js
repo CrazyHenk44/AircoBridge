@@ -76,13 +76,16 @@ test("server advertises API capabilities without changing legacy routes", async 
   const manager = {
     list: () => [],
   };
-  const server = createServer(manager);
+  const bridgeId = "71bc0a85-836d-4ed7-94bb-8ff12193f378";
+  const server = createServer(manager, { bridgeId });
 
   const infoResponse = await dispatch(server, { url: "/api/info" });
   assert.equal(infoResponse.statusCode, 200);
   const info = JSON.parse(infoResponse.body);
   assert.equal(info.name, "AircoBridge");
   assert.equal(info.apiVersion, 1);
+  assert.equal(info.bridgeId, bridgeId);
+  assert.equal(info.features.discovery, true);
   assert.equal(info.features.presets, true);
   assert.equal(info.features.globalPresets, true);
 

@@ -14,14 +14,20 @@ Returns bridge and API metadata for integrations that may be newer than the serv
 ```json
 {
   "name": "AircoBridge",
-  "bridgeVersion": "1.0.0",
+  "bridgeVersion": "1.2.0",
+  "bridgeId": "71bc0a85-836d-4ed7-94bb-8ff12193f378",
   "apiVersion": 1,
   "features": {
+    "discovery": true,
     "presets": true,
     "globalPresets": true
   }
 }
 ```
+
+`bridgeId` is generated once and remains stable when the host address changes. LAN
+integrations use it to match the HTTP API to the `_aircobridge._tcp.local` mDNS-SD
+service. It is an installation identifier, not an air-conditioner credential.
 
 Clients should detect optional functionality through `features`, not by comparing
 version strings. A `404` from this endpoint identifies a legacy server; clients can
