@@ -1,148 +1,101 @@
 # AircoBridge
 
+[![Latest release](https://img.shields.io/github/v/release/CrazyHenk44/AircoBridge)](https://github.com/CrazyHenk44/AircoBridge/releases/latest)
 [![CI](https://github.com/CrazyHenk44/AircoBridge/actions/workflows/ci.yml/badge.svg)](https://github.com/CrazyHenk44/AircoBridge/actions/workflows/ci.yml)
+[![Container](https://img.shields.io/badge/ghcr.io-aircobridge-2496ED?logo=docker&logoColor=white)](https://github.com/CrazyHenk44/AircoBridge/pkgs/container/aircobridge)
 
-Local HTTP bridge and web UI for **Mitsubishi Heavy Industries Smart M-Air / WF-RAC** air
-conditioners. It talks directly to the WF-RAC Wi-Fi module on your LAN — no cloud, no
-manufacturer account. This repo contains the Node.js service, the web interface and
-protocol tooling.
+**Control and automate Mitsubishi Heavy Industries air conditioners directly on your
+LAN — without a cloud account, subscription or external automation platform.**
 
-![AircoBridge web interface](screenie.png)
+AircoBridge connects to Smart M-Air / WF-RAC Wi-Fi modules and gives you a polished web
+dashboard, visual climate automations, live energy insight and a documented REST API.
+Everything runs locally, including your automations.
 
-## Features
+![AircoBridge dashboard](screenie.png)
 
-- Polls one or more WF-RAC units and exposes their state over a REST API.
-- Web interface for power, target temperature, mode, fan speed, vanes and 3D auto.
-- Saves named, per-unit presets for restoring all controls with one click; a preset can
-  optionally be copied to every currently configured unit.
-- Builds graphical automations from connected temperature, power, time, AND/OR and
-  action blocks, including a minimum on/off duration for power conditions. Flows run
-  locally on the bridge while the browser is closed.
-- Keeps a bounded local activity log explaining executed actions, matching sensor
-  values, cooldown skips, configuration changes and errors.
-- Shows estimated live outdoor-unit power plus technical compressor, valve and coil
-  values, and tracks usage history (`data/airco-history.json`) including monthly totals.
-- Interactive protocol-debug tool for reverse-engineering unknown status bytes.
-- Finds WF-RAC units that announce `_beaver._tcp.local`, stores a privacy-preserving
-  discovery identity and follows later IP-address changes automatically.
-- Announces itself with mDNS-SD so integrations such as Homey can discover the bridge
-  and follow address changes automatically.
+## Why AircoBridge?
 
-## Supported hardware
+| Local by design | Useful automations | More insight |
+| --- | --- | --- |
+| Talks directly to the air conditioner. No manufacturer cloud or internet connection required. | Build flows visually from temperature, power, mode and time conditions. They keep running when the browser is closed. | See temperatures, energy history and estimated live outdoor-unit power, plus compressor and coil telemetry. |
 
-This bridge targets Mitsubishi Heavy Industries units with a Smart M-Air WF-RAC (or
-WF-RAC-HTTPS) Wi-Fi module — the ones controlled by the "Smart M-Air" mobile app. It
-speaks the module's local Beaver API on port `51443` (HTTPS with a self-signed
-certificate).
+### Highlights
 
-It has only been tested against a single setup:
+- Control power, temperature, mode, fan speed, vanes, 3D auto and vacant mode.
+- Save named presets and apply a complete configuration with one click.
+- Start with a ready-made temperature-control template or create a flow from scratch.
+- Combine conditions with AND/OR blocks and connect them to preset or power actions.
+- Require a power state to have lasted for a minimum time before an action may run.
+- Finish cooling with a managed **Clean 30 min → Off** cycle.
+- Keep manual control in charge until the unit is switched off or automations are resumed.
+- Review a local activity log explaining triggers, skipped actions and errors.
+- Discover compatible units through mDNS and follow later IP-address changes.
+- Integrate other local systems through the JSON REST API and `_aircobridge._tcp.local`.
+
+## Quick start
+
+You need Docker with the Compose plugin and an air conditioner already connected to
+Wi-Fi through the Smart M-Air app. The published image supports AMD64 and ARM64 Linux.
+
+```sh
+git clone https://github.com/CrazyHenk44/AircoBridge.git
+cd AircoBridge
+make setup
+docker compose up -d
+```
+
+Open [http://localhost:3000](http://localhost:3000), click **Add air conditioner** and
+follow the setup wizard. It can discover a unit automatically, register the bridge on
+the Wi-Fi module, test the connection and save the configuration.
+
+To install a newer release later:
+
+```sh
+make update
+```
+
+Configuration and runtime data live in the mounted `config/` and `data/` directories,
+so recreating or updating the container keeps your units, presets, history and flows.
+
+## Visual automations
+
+Open **Automations** to create a blank flow or choose **+ → Templates → Temperature
+control**. The template creates guarded start and stop branches that you can edit like
+any other flow.
+
+By default, it:
+
+1. Starts a selected preset when the temperature conditions match and the unit is off.
+2. Prevents the stop branch from running until the air conditioner has been on for at
+   least 30 minutes.
+3. Runs a 30-minute low-fan Clean cycle before switching the unit off.
+
+![AircoBridge automation workspace](docs/images/automations.png)
+
+Flows and their latest 500 meaningful activity events are stored locally. Manual
+changes made through the dashboard or physical remote pause automation actions for
+that unit; switching it off or selecting **Resume automations** hands control back.
+
+## Compatible hardware
+
+AircoBridge targets Mitsubishi Heavy Industries units fitted with a **WF-RAC** or
+**WF-RAC-HTTPS** module — the modules used by the Smart M-Air mobile app. It connects to
+the local Beaver API on port `51443`.
+
+Currently verified hardware:
 
 | Indoor unit | Wi-Fi module | Wireless firmware | MCU firmware |
 | --- | --- | --- | --- |
 | SRK50ZS-WF | WF-RAC-HTTPS | 025 | 200 |
 
-Other WF-RAC units will likely work since they share the same protocol, but that is
-untested. If you run this bridge against a different unit, please open an issue to
-report whether it works (include the model and firmware versions from
-`GET /api/aircos/:id?raw=1`) so this list can grow.
-
-## Installation
-
-You need Docker with the Compose plugin, and a WF-RAC unit that is already on your
-Wi-Fi (set up once with the Smart M-Air app). The published image supports AMD64 and
-ARM64 Linux systems. The recommended setup uses the included Compose file and Docker's
-host network mode so mDNS discovery reaches the physical LAN:
-
-```sh
-git clone https://github.com/CrazyHenk44/AircoBridge.git
-cd AircoBridge
-make setup                      # creates .env and an empty config/aircos.json
-docker compose up -d
-```
-
-`docker compose up -d` automatically pulls
-`ghcr.io/crazyhenk44/aircobridge:latest` (equivalent to running `docker pull`), then
-starts it with persistent configuration and history storage.
-
-Open `http://localhost:3000` and click **"+ Add air conditioner"**. The wizard walks you
-through the rest:
-
-1. Select a unit found automatically through `_beaver._tcp.local`, or enter its IP
-   address manually from your router's DHCP client list. Units linked through mDNS do
-   not require a static DHCP lease.
-2. Choose how to get access: let the bridge **register itself** on the unit (it
-   generates a fresh identity, the same way the Smart M-Air app pairs a phone), or
-   enter an existing `deviceId`/`operatorId`.
-3. The wizard tests the connection against the live unit.
-4. Give the unit a name — done. It appears with live status and controls, and is saved
-   to `config/aircos.json`.
-
-The module has four operator slots. If the wizard reports they are all taken, remove an
-unused account in the Smart M-Air app and try again, or pick "reuse existing
-credentials" in the wizard. Manual configuration, CLI registration and other ways to
-obtain credentials are described in [docs/advanced.md](docs/advanced.md).
-
-To remove a unit, use the delete button on its card. This also discards its usage
-history and presets, and — when the bridge registered the account itself — removes that
-account from the unit again, freeing up the operator slot.
-
-### Troubleshooting
-
-A unit should show as online within one poll interval (30 s by default). If not:
-
-```sh
-docker compose logs -f airco                  # service logs
-curl -s http://localhost:3000/api/aircos      # per-unit "online" and "lastError"
-```
-
-Common causes: the unit is on a different VLAN/subnet, mDNS is blocked, or the operator
-identity is not registered on the unit.
-
-Useful commands:
-
-```sh
-docker compose ps
-docker compose down
-make update                     # pull the newest image and restart
-```
-
-The bridge browses for `_beaver._tcp.local` units during setup and startup, and after a
-connection failure. It hashes each service identity before storing it; when the unit's
-address changes, the runtime and file configuration are updated and the request is
-retried once. The bridge also advertises `_aircobridge._tcp.local` on the LAN by
-default. Its stable
-identity is generated once in `data/bridge-id`; keep the `data` directory when moving
-or updating an installation. If the host has VPN, NetBird, Docker or other virtual
-interfaces, set `AIRCO_MDNS_INTERFACE` in `.env` to the physical LAN interface name
-(for example `eth0`) or its host IP. Comma-separated values are also accepted. Set
-`AIRCO_MDNS_ENABLED=0` only when both unit discovery and bridge advertisement are
-intentionally disabled; the setup wizard then falls back to manual address entry.
-
-Host networking is supported natively by Docker Engine on Linux. Docker Desktop users
-must enable host networking in Docker Desktop 4.34 or newer. The configured
-`AIRCO_HTTP_PORT` is the actual host port in this mode, so it must be free.
-
-When upgrading an existing Compose installation, check `.env`: older releases created
-`AIRCO_HTTP_BIND=127.0.0.1`, which must be changed to `0.0.0.0` or the host's physical
-LAN IP for Homey and other LAN clients to connect. Then recreate the container with
-`make update` (published image) or `make up-local` (local source).
-
-History is stored in `data/airco-history.json`, presets in `data/airco-presets.json`,
-graphical flows in `data/airco-automations.json`, and their latest 500 meaningful
-events in `data/airco-automation-log.json`. Override the paths with
-`AIRCO_HISTORY_FILE`, `AIRCO_PRESETS_FILE`, `AIRCO_AUTOMATIONS_FILE` and
-`AIRCO_AUTOMATION_LOG_FILE` if needed.
-Time blocks use the service's local timezone; Compose defaults `TZ` to
-`Europe/Amsterdam`, which can be changed in `.env`.
-
-By default, Compose binds the web UI to all host interfaces so LAN integrations can
-reach it. To limit both HTTP and discovery to the physical LAN on a multi-homed host,
-set `AIRCO_HTTP_BIND` to that host IP and set `AIRCO_MDNS_INTERFACE` to the matching IP
-or interface name. Protect access at the network layer.
+Other WF-RAC models are likely compatible because they share the protocol. Reports for
+other combinations are welcome; please include the model and firmware versions but no
+device identifiers or credentials.
 
 ## REST API
 
-Everything the web UI does goes through a JSON API you can use from your own projects:
+Everything in the dashboard uses the same JSON API that is available to your own local
+integrations:
 
 ```sh
 curl -X POST http://localhost:3000/api/aircos/living-room/power \
@@ -150,35 +103,48 @@ curl -X POST http://localhost:3000/api/aircos/living-room/power \
   -d '{"power":"on"}'
 ```
 
-See [docs/api.md](docs/api.md) for the full endpoint reference.
-Integrations can use `GET /api/info` to read the stable `bridgeId` and detect optional
-bridge features such as discovery and presets while remaining compatible with older
-server versions.
+See [docs/api.md](docs/api.md) for air-conditioner controls, presets, automations,
+activity logs and feature detection.
+
+## Troubleshooting
+
+A unit normally appears online within one polling interval (30 seconds by default).
+Start with:
+
+```sh
+docker compose ps
+docker compose logs -f airco
+curl -s http://localhost:3000/api/aircos
+```
+
+Connection problems are usually caused by VLAN isolation, blocked mDNS traffic, an
+incorrect address or unavailable operator slot. Manual configuration, network-interface
+selection, registration and Docker Desktop notes are covered in
+[docs/advanced.md](docs/advanced.md).
 
 ## Documentation
 
-- [docs/api.md](docs/api.md) — REST API reference for integrating with your own projects.
-- [docs/advanced.md](docs/advanced.md) — running without Docker, configuration details, CLI and protocol debugging.
-- [docs/architecture.md](docs/architecture.md) — how the service is put together.
-- [docs/mitsubishi-airco.md](docs/mitsubishi-airco.md) — WF-RAC / Beaver protocol notes.
+- [API reference](docs/api.md) — controls, presets, automations and integration details.
+- [Advanced setup](docs/advanced.md) — configuration, networking, CLI and debugging.
+- [Architecture](docs/architecture.md) — service components and persistent state.
+- [WF-RAC protocol notes](docs/mitsubishi-airco.md) — Beaver messages and operation data.
 
 ## Security
 
-The bridge has **no authentication** and disables TLS verification towards the unit
-(the module uses a self-signed certificate). Run it only on a trusted LAN and do not
-expose port 3000 to the internet. See [SECURITY.md](SECURITY.md) for the threat model and
-vulnerability-reporting guidance.
+AircoBridge has no built-in user authentication and communicates with the module over
+its self-signed TLS connection. Run it only on a trusted LAN and never expose port
+`3000` directly to the internet. See [SECURITY.md](SECURITY.md) for the threat model and
+reporting process.
 
 ## Contributing
 
-Bug reports, compatibility reports and pull requests are welcome. See
+Compatibility reports, bug reports and pull requests are welcome. See
 [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and required checks.
 
 ## Credits
 
 Protocol knowledge builds on the reverse-engineering work of
-[jeatheak/Mitsubishi-WF-RAC-Integration](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration)
-(in particular its [WF-RAC module reference](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration/blob/master/docs/wf-rac-module-reference.md)),
+[jeatheak/Mitsubishi-WF-RAC-Integration](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration),
 [JobDoesburg/homebridge-mhi-wfrac](https://github.com/JobDoesburg/homebridge-mhi-wfrac)
 and [mcheijink/WF-RAC](https://github.com/mcheijink/WF-RAC).
 
