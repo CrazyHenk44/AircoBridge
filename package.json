@@ -14,7 +14,7 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test",
-    "check": "node --check src/*.js public/app.js wfrac-lib.js protocol-debug.js test/*.js && npm test",
+    "check": "node --check src/*.js public/*.js wfrac-lib.js protocol-debug.js test/*.js && npm test",
     "cli": "node wfrac-lib.js",
     "protocol-debug": "node protocol-debug.js"
   },

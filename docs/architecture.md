@@ -16,6 +16,9 @@
 - `src/config.js`: configuration loading and validation.
 - `src/history-store.js`: power/usage history persistence.
 - `src/preset-store.js`: persistent, per-unit named control presets.
+- `src/automation-store.js`: validates and persists graphical automation graphs.
+- `src/automation-engine.js`: evaluates flow branches and queues preset/power actions.
+- `src/automation-log-store.js`: bounded persistent audit trail for meaningful flow events.
 - `public/`: the web interface (plain HTML/CSS/JS).
 - `wfrac-lib.js`: CLI wrapper around `src/wfrac.js` for manual tests, without
   hard-coded secrets.
@@ -25,6 +28,11 @@
 ## Implementation notes
 
 - Writes per unit go through a queue to prevent overlapping commands.
+- Automations are directed acyclic graphs. Condition and logic blocks are evaluated
+  separately for every action branch; actions are edge-triggered and have an internal
+  five-minute cooldown to absorb rapidly oscillating conditions.
+- Manual commands can claim persistent per-unit control. Conditions keep evaluating,
+  but local automation actions for that unit pause until it is switched off or resumed.
 - A startup scan migrates existing endpoint-only configurations when the mapping is
   unambiguous. A failed read or write triggers a rate-limited scan and one retry when
   the resolved endpoint changed.

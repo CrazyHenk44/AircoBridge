@@ -5,10 +5,13 @@ const http = require("http");
 const path = require("path");
 const { createAddressReconciler } = require("./address-reconciler");
 const { AircoManager } = require("./airco-manager");
+const { AutomationEngine } = require("./automation-engine");
+const { AutomationLogStore } = require("./automation-log-store");
+const { AutomationStore } = require("./automation-store");
 const { loadOrCreateBridgeId } = require("./bridge-identity");
 const { loadConfig, normalizeAirco, appendAircoToFile, removeAircoFromFile } = require("./config");
 const { startDiscovery } = require("./discovery");
-const { PresetStore } = require("./preset-store");
+const { PresetStore, applyPresetSettings } = require("./preset-store");
 const { BRIDGE_DEVICE_PREFIX, probeUnit, registerOperator, unregisterOperator, testConnection } = require("./registration");
 const { createUnitDiscoverer } = require("./unit-discovery");
 const { version: BRIDGE_VERSION } = require("../package.json");
@@ -115,6 +118,14 @@ function boolFromValue(value, field = "value") {
   throw Object.assign(new Error(`Expected boolean-like ${field}`), { statusCode: 400 });
 }
 
+function withAutomationOverride(snapshot, automationEngine, aircoId) {
+  if (typeof automationEngine?.manualOverride !== "function") return snapshot;
+  return {
+    ...snapshot,
+    automationOverride: automationEngine.manualOverride(aircoId),
+  };
+}
+
 function captureVacantRestoreState(status) {
   return {
     operation: Boolean(status.operation),
@@ -153,18 +164,6 @@ function capturePresetSettings(status) {
     coolHotJudge: Boolean(status.coolHotJudge),
     vacant: Boolean(status.isVacantProperty),
   };
-}
-
-function applyPresetSettings(status, settings) {
-  status.setMode(settings.mode);
-  status.presetTemp = settings.temperature;
-  status.setAirFlow(settings.airflow);
-  status.setWindDirectionUD(settings.windDirectionUD);
-  status.setWindDirectionLR(settings.windDirectionLR);
-  status.setEntrust(settings.entrust);
-  status.setVacantProperty(settings.vacant);
-  status.coolHotJudge = settings.coolHotJudge;
-  status.setPower(true);
 }
 
 function setupTarget(body) {
@@ -299,7 +298,7 @@ async function deleteAirco(res, manager, configFile, presetStore, runtime) {
   return sendJson(res, 200, { removed: config.id, accountDeleted });
 }
 
-async function routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer) {
+async function routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer, automationEngine) {
   const url = new URL(req.url, "http://localhost");
   const parts = url.pathname.split("/").filter(Boolean);
 
@@ -313,6 +312,9 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
         unitDiscovery: Boolean(unitDiscoverer),
         presets: true,
         globalPresets: true,
+        automations: Boolean(automationEngine),
+        automationLog: Boolean(automationEngine?.logStore),
+        manualOverride: typeof automationEngine?.activateManualOverride === "function",
       },
     };
     if (bridgeId) info.bridgeId = bridgeId;
@@ -323,7 +325,7 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
     const aircos = manager.list().map((item) => ({
       ...item,
       presets: presetStore.list(item.airco.id),
-    }));
+    })).map((item) => withAutomationOverride(item, automationEngine, item.airco.id));
     return sendJson(res, 200, { aircos });
   }
 
@@ -348,11 +350,47 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
     return addAirco(res, manager, configFile, await readBody(req));
   }
 
+  if (url.pathname === "/api/automation-log") {
+    if (!automationEngine?.logStore) return sendJson(res, 404, { error: "Automation activity is not available" });
+    if (req.method === "GET") {
+      return sendJson(res, 200, {
+        entries: automationEngine.listLog({
+          limit: url.searchParams.get("limit") || 100,
+          automationId: url.searchParams.get("automationId") || null,
+        }),
+      });
+    }
+    if (req.method === "DELETE") return sendJson(res, 200, { removed: automationEngine.clearLog() });
+    return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
+  if (url.pathname === "/api/automations") {
+    if (!automationEngine) return sendJson(res, 404, { error: "Automations are not available" });
+    if (req.method === "GET") return sendJson(res, 200, { automations: automationEngine.list() });
+    if (req.method === "POST") return sendJson(res, 201, automationEngine.create(await readBody(req)));
+    return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
+  if (url.pathname === "/api/automations/temperature-shortcut") {
+    if (!automationEngine) return sendJson(res, 404, { error: "Automations are not available" });
+    if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+    return sendJson(res, 201, automationEngine.createTemperatureShortcut(await readBody(req)));
+  }
+
+  if (parts[0] === "api" && parts[1] === "automations" && parts[2] && !parts[3]) {
+    if (!automationEngine) return sendJson(res, 404, { error: "Automations are not available" });
+    if (req.method === "GET") return sendJson(res, 200, automationEngine.get(parts[2]));
+    if (req.method === "PUT") return sendJson(res, 200, automationEngine.update(parts[2], await readBody(req)));
+    if (req.method === "DELETE") return sendJson(res, 200, { removed: automationEngine.remove(parts[2]) });
+    return sendJson(res, 405, { error: "Method not allowed" });
+  }
+
   if (parts[0] !== "api" || parts[1] !== "aircos" || !parts[2]) {
     return sendJson(res, 404, { error: "Not found" });
   }
 
   const runtime = manager.get(parts[2]);
+  const aircoId = runtime.config?.id || parts[2];
   const action = parts[3];
   const presetId = parts[4];
 
@@ -374,11 +412,15 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
       return sendJson(res, 201, { created });
     }
     if (req.method === "POST" && presetId && parts[5] === "apply") {
-      await readBody(req);
+      const body = await readBody(req);
       const preset = presetStore.get(runtime.config.id, presetId);
       const snapshot = await runtime.update((status) => applyPresetSettings(status, preset.settings));
       runtime.vacantPresetRestoreState = null;
-      return sendJson(res, 200, { ...snapshot, appliedPreset: preset });
+      if (body.automationOverride !== false) {
+        automationEngine?.activateManualOverride?.(aircoId, { source: "preset" });
+      }
+      automationEngine?.acknowledgeControlState?.(aircoId);
+      return sendJson(res, 200, withAutomationOverride({ ...snapshot, appliedPreset: preset }, automationEngine, aircoId));
     }
     return sendJson(res, req.method === "GET" || req.method === "POST" || req.method === "DELETE" ? 404 : 405, {
       error: req.method === "GET" || req.method === "POST" || req.method === "DELETE" ? "Not found" : "Method not allowed",
@@ -391,11 +433,32 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
       includeDebug: url.searchParams.get("debug") === "1",
     });
     snapshot.presets = presetStore.list(runtime.config.id);
-    return sendJson(res, 200, snapshot);
+    return sendJson(res, 200, withAutomationOverride(snapshot, automationEngine, aircoId));
   }
 
   if (req.method === "DELETE" && !action) {
+    automationEngine?.clearManualOverride?.(aircoId, { reason: "The air conditioner was removed." });
     return deleteAirco(res, manager, configFile, presetStore, runtime);
+  }
+
+  if (action === "automation-override") {
+    if (!automationEngine?.activateManualOverride || !automationEngine?.clearManualOverride) {
+      return sendJson(res, 404, { error: "Manual automation override is not available" });
+    }
+    if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
+    const body = await readBody(req);
+    const active = boolFromValue(body.active ?? body.value, "active");
+    if (active) {
+      const snapshot = runtime.snapshot();
+      const isOn = snapshot?.status?.power === "on" || snapshot?.status?.operation === true;
+      if (!isOn) {
+        return sendJson(res, 409, { error: "Switch on the air conditioner before starting manual control" });
+      }
+      automationEngine.activateManualOverride(aircoId, { source: "api" });
+    } else {
+      automationEngine.clearManualOverride(aircoId);
+    }
+    return sendJson(res, 200, withAutomationOverride(runtime.snapshot(), automationEngine, aircoId));
   }
 
   if (req.method !== "POST") return sendJson(res, 405, { error: "Method not allowed" });
@@ -403,11 +466,14 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
   const body = await readBody(req);
 
   if (action === "refresh") {
-    return sendJson(res, 200, await runtime.refresh());
+    return sendJson(res, 200, withAutomationOverride(await runtime.refresh(), automationEngine, aircoId));
   }
 
+  const requestedPower = action === "power"
+    ? boolFromPayload(body)
+    : action === "settings" && ("operation" in body || "power" in body) ? boolFromPayload(body) : null;
   const result = await runtime.update((status) => {
-    if (action === "power") status.setPower(boolFromPayload(body));
+    if (action === "power") status.setPower(requestedPower);
     else if (action === "temperature") status.setTargetTemp(body.temperature ?? body.presetTemp ?? body.value);
     else if (action === "mode") status.setMode(body.mode ?? body.operationMode ?? body.value);
     else if (action === "airflow") status.setAirFlow(body.airflow ?? body.airFlow ?? body.value);
@@ -431,7 +497,7 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
       if ("windDirectionUD" in body) status.setWindDirectionUD(body.windDirectionUD);
       if ("windDirectionLR" in body) status.setWindDirectionLR(body.windDirectionLR);
     } else if (action === "settings") {
-      if ("operation" in body || "power" in body) status.setPower(boolFromPayload(body));
+      if ("operation" in body || "power" in body) status.setPower(requestedPower);
       if ("temperature" in body || "presetTemp" in body) status.setTargetTemp(body.temperature ?? body.presetTemp);
       if ("mode" in body || "operationMode" in body) status.setMode(body.mode ?? body.operationMode);
       if ("airflow" in body || "airFlow" in body) status.setAirFlow(body.airflow ?? body.airFlow);
@@ -445,16 +511,34 @@ async function routeApi(req, res, manager, configFile, presetStore, bridgeId, un
     }
   });
 
-  return sendJson(res, 200, result);
+  if (requestedPower === false) {
+    automationEngine?.clearManualOverride?.(aircoId, {
+      reason: "The air conditioner was switched off manually; automation control resumed automatically.",
+    });
+  } else if (body.automationOverride !== false && (requestedPower === true
+    || (["temperature", "mode", "airflow", "settings"].includes(action)
+      && (result?.status?.power === "on" || result?.status?.operation === true)))) {
+    automationEngine?.activateManualOverride?.(aircoId, { source: action });
+  }
+  automationEngine?.acknowledgeControlState?.(aircoId);
+
+  return sendJson(res, 200, withAutomationOverride(result, automationEngine, aircoId));
 }
 
 function createServer(
   manager,
-  { configFile = null, presetStore = new PresetStore(), bridgeId = null, unitDiscoverer = null } = {}
+  {
+    configFile = null,
+    presetStore = new PresetStore(),
+    bridgeId = null,
+    unitDiscoverer = null,
+    automationEngine = null,
+  } = {}
 ) {
   return http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
-      routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer).catch((err) => sendError(res, err));
+      routeApi(req, res, manager, configFile, presetStore, bridgeId, unitDiscoverer, automationEngine)
+        .catch((err) => sendError(res, err));
       return;
     }
     serveStatic(req, res);
@@ -482,6 +566,11 @@ async function main() {
   const bridgeId = loadOrCreateBridgeId(config.discovery.idFile);
   const manager = new AircoManager(config.aircos, config.historyFile);
   const presetStore = new PresetStore(config.presetsFile);
+  const automationStore = new AutomationStore(config.automationsFile);
+  const automationLogStore = new AutomationLogStore(config.automationLogFile);
+  const automationEngine = new AutomationEngine(manager, presetStore, automationStore, {
+    logStore: automationLogStore,
+  });
   const unitDiscoverer = config.discovery.enabled
     ? createUnitDiscoverer({ interfaces: config.discovery.interfaces })
     : null;
@@ -494,9 +583,11 @@ async function main() {
     presetStore,
     bridgeId,
     unitDiscoverer,
+    automationEngine,
   });
 
   manager.start();
+  automationEngine.start();
   await listen(server, config.server.port, config.server.host);
   console.log(`airco service listening on http://${config.server.host}:${config.server.port}`);
   if (addressReconciler) {
@@ -527,6 +618,7 @@ async function main() {
   const shutdown = async () => {
     if (shuttingDown) return;
     shuttingDown = true;
+    automationEngine.stop();
     manager.stop();
     if (discovery) await discovery.stop().catch((err) => console.error(`mDNS shutdown failed: ${err.message || err}`));
     await closeServer(server);

@@ -29,6 +29,24 @@ function normalizeSnapshotForApi(snapshot) {
   };
 }
 
+function combineSelfCleanStatus(status, managedSelfClean) {
+  if (!status) return status;
+  const deviceActive = Boolean(status.isSelfCleanOperation);
+  const managedActive = Boolean(managedSelfClean);
+  const combinedActive = deviceActive || managedActive;
+  return {
+    ...status,
+    deviceSelfCleanOperation: deviceActive,
+    managedSelfCleanOperation: managedActive,
+    isSelfCleanOperation: combinedActive,
+    selfCleanOperationLabel: combinedActive ? "Self-clean active" : "Self-clean off",
+    selfCleanSource: deviceActive && managedActive
+      ? "device+automation"
+      : deviceActive ? "device" : managedActive ? "automation" : null,
+    selfCleanUntil: managedSelfClean?.endsAt || null,
+  };
+}
+
 class AircoRuntime {
   constructor(config, historyStore) {
     this.config = config;
@@ -42,6 +60,7 @@ class AircoRuntime {
     this.timer = null;
     this.queue = Promise.resolve();
     this.vacantPresetRestoreState = null;
+    this.managedSelfClean = null;
     this.addressRecovery = null;
   }
 
@@ -64,7 +83,9 @@ class AircoRuntime {
       online: this.online,
       lastUpdate: this.lastUpdate,
       lastError: this.lastError,
-      status: this.status ? this.status.toJSON({ debug: includeDebug }) : null,
+      status: this.status
+        ? combineSelfCleanStatus(this.status.toJSON({ debug: includeDebug }), this.managedSelfClean)
+        : null,
       history: this.historyStore.summarize(this.config.id, this.status),
     };
 
@@ -72,11 +93,16 @@ class AircoRuntime {
     return normalizeSnapshotForApi(value);
   }
 
-  async refresh({ recoverAddress = true } = {}) {
+  refresh(options = {}) {
+    return this.enqueue(() => this.performRefresh(options));
+  }
+
+  async performRefresh({ recoverAddress = true } = {}) {
     const attemptedIp = this.client.ip;
     const attemptedPort = this.client.port;
     try {
-      const { raw, status } = await this.client.getStatus();
+      const statusReader = this.client.getStatusWithOperationData || this.client.getStatus;
+      const { raw, status } = await statusReader.call(this.client);
       this.raw = raw;
       this.status = status;
       this.lastUpdate = new Date().toISOString();
@@ -87,12 +113,16 @@ class AircoRuntime {
     } catch (err) {
       const endpointChanged = this.client.ip !== attemptedIp || this.client.port !== attemptedPort;
       if (recoverAddress && (endpointChanged || await this.tryAddressRecovery(err))) {
-        return this.refresh({ recoverAddress: false });
+        return this.performRefresh({ recoverAddress: false });
       }
       this.lastError = toError(err);
       this.online = false;
       throw err;
     }
+  }
+
+  setManagedSelfClean(value) {
+    this.managedSelfClean = value ? structuredClone(value) : null;
   }
 
   async tryAddressRecovery(originalError) {
@@ -132,7 +162,7 @@ class AircoRuntime {
       const { status } = await this.client.getStatus();
       await mutator(status);
       await this.client.setStatus(status);
-      return this.refresh();
+      return this.performRefresh();
     } catch (err) {
       const endpointChanged = this.client.ip !== attemptedIp || this.client.port !== attemptedPort;
       if (recoverAddress && (endpointChanged || await this.tryAddressRecovery(err))) {
@@ -230,4 +260,4 @@ class AircoManager {
   }
 }
 
-module.exports = { AircoManager };
+module.exports = { AircoManager, combineSelfCleanStatus };

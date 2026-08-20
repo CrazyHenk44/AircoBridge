@@ -89,10 +89,126 @@ test("server advertises API capabilities without changing legacy routes", async 
   assert.equal(info.features.unitDiscovery, false);
   assert.equal(info.features.presets, true);
   assert.equal(info.features.globalPresets, true);
+  assert.equal(info.features.automations, false);
+  assert.equal(info.features.automationLog, false);
+  assert.equal(info.features.manualOverride, false);
 
   const legacyResponse = await dispatch(server, { url: "/api/aircos" });
   assert.equal(legacyResponse.statusCode, 200);
   assert.deepEqual(JSON.parse(legacyResponse.body), { aircos: [] });
+});
+
+test("manual API control starts and clears a per-unit automation override", async () => {
+  const status = new WfracStatus();
+  status.setPower(false);
+  const runtime = {
+    config: { id: "living-room" },
+    snapshot: () => ({ airco: { id: "living-room" }, online: true, status: status.toJSON() }),
+    async update(mutator) {
+      mutator(status);
+      return this.snapshot();
+    },
+  };
+  let override = null;
+  const calls = [];
+  const automationEngine = {
+    activateManualOverride(aircoId, options) {
+      calls.push(["activate", aircoId, options.source]);
+      override ||= { aircoId, startedAt: "2026-08-16T08:00:00.000Z", source: options.source };
+      return override;
+    },
+    clearManualOverride(aircoId) {
+      calls.push(["clear", aircoId]);
+      override = null;
+    },
+    manualOverride: () => override,
+  };
+  const manager = { get: () => runtime, list: () => [runtime.snapshot()] };
+  const server = createServer(manager, { automationEngine });
+
+  const switchedOn = await dispatch(server, {
+    method: "POST",
+    url: "/api/aircos/living-room/power",
+    body: JSON.stringify({ power: "on" }),
+  });
+  assert.equal(switchedOn.statusCode, 200);
+  assert.equal(JSON.parse(switchedOn.body).automationOverride.source, "power");
+
+  const list = await dispatch(server, { url: "/api/aircos" });
+  assert.equal(JSON.parse(list.body).aircos[0].automationOverride.aircoId, "living-room");
+
+  const resumed = await dispatch(server, {
+    method: "POST",
+    url: "/api/aircos/living-room/automation-override",
+    body: JSON.stringify({ active: false }),
+  });
+  assert.equal(resumed.statusCode, 200);
+  assert.equal(JSON.parse(resumed.body).automationOverride, null);
+
+  await dispatch(server, {
+    method: "POST",
+    url: "/api/aircos/living-room/power",
+    body: JSON.stringify({ power: "on", automationOverride: false }),
+  });
+  assert.deepEqual(calls, [
+    ["activate", "living-room", "power"],
+    ["clear", "living-room"],
+  ]);
+});
+
+test("server exposes automation CRUD and the temperature shortcut", async () => {
+  const calls = [];
+  const automation = { id: "automation-1", name: "Warm day", nodes: [], edges: [] };
+  const automationEngine = {
+    logStore: {},
+    list: () => [automation],
+    get: (id) => ({ ...automation, id }),
+    create: (body) => (calls.push(["create", body]), automation),
+    update: (id, body) => (calls.push(["update", id, body]), { ...automation, ...body }),
+    remove: (id) => (calls.push(["remove", id]), automation),
+    createTemperatureShortcut: (body) => (calls.push(["shortcut", body]), automation),
+    listLog: (options) => (calls.push(["list-log", options]), [{ id: "entry-1" }]),
+    clearLog: () => (calls.push(["clear-log"]), 1),
+  };
+  const manager = { list: () => [] };
+  const server = createServer(manager, { automationEngine });
+
+  const list = await dispatch(server, { url: "/api/automations" });
+  assert.equal(list.statusCode, 200);
+  assert.deepEqual(JSON.parse(list.body), { automations: [automation] });
+
+  const activity = await dispatch(server, { url: "/api/automation-log?limit=25" });
+  assert.equal(activity.statusCode, 200);
+  assert.deepEqual(JSON.parse(activity.body), { entries: [{ id: "entry-1" }] });
+
+  const clearActivity = await dispatch(server, { method: "DELETE", url: "/api/automation-log" });
+  assert.equal(clearActivity.statusCode, 200);
+  assert.deepEqual(JSON.parse(clearActivity.body), { removed: 1 });
+
+  const create = await dispatch(server, {
+    method: "POST",
+    url: "/api/automations",
+    body: JSON.stringify({ name: "Warm day" }),
+  });
+  assert.equal(create.statusCode, 201);
+
+  const update = await dispatch(server, {
+    method: "PUT",
+    url: "/api/automations/automation-1",
+    body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(update.statusCode, 200);
+
+  const shortcut = await dispatch(server, {
+    method: "POST",
+    url: "/api/automations/temperature-shortcut",
+    body: JSON.stringify({ aircoId: "living-room" }),
+  });
+  assert.equal(shortcut.statusCode, 201);
+
+  const remove = await dispatch(server, { method: "DELETE", url: "/api/automations/automation-1" });
+  assert.equal(remove.statusCode, 200);
+  assert.deepEqual(calls.map((call) => call[0]), ["list-log", "clear-log", "create", "update", "shortcut", "remove"]);
 });
 
 test("server exposes discovered WF-RAC units and marks configured addresses", async () => {

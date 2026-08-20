@@ -71,6 +71,18 @@ function normalizePreset(value) {
   };
 }
 
+function applyPresetSettings(status, settings) {
+  status.setMode(settings.mode);
+  status.presetTemp = settings.temperature;
+  status.setAirFlow(settings.airflow);
+  status.setWindDirectionUD(settings.windDirectionUD);
+  status.setWindDirectionLR(settings.windDirectionLR);
+  status.setEntrust(settings.entrust);
+  status.setVacantProperty(settings.vacant);
+  status.coolHotJudge = settings.coolHotJudge;
+  status.setPower(true);
+}
+
 class PresetStore {
   constructor(filePath = "data/airco-presets.json") {
     this.filePath = filePath;
@@ -172,4 +184,4 @@ class PresetStore {
   }
 }
 
-module.exports = { PresetStore, normalizeSettings };
+module.exports = { PresetStore, applyPresetSettings, normalizeSettings };

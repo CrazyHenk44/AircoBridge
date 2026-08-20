@@ -92,6 +92,8 @@ function loadConfig() {
     },
     historyFile: process.env.AIRCO_HISTORY_FILE || server.historyFile || "data/airco-history.json",
     presetsFile: process.env.AIRCO_PRESETS_FILE || server.presetsFile || "data/airco-presets.json",
+    automationsFile: process.env.AIRCO_AUTOMATIONS_FILE || server.automationsFile || "data/airco-automations.json",
+    automationLogFile: process.env.AIRCO_AUTOMATION_LOG_FILE || server.automationLogFile || "data/airco-automation-log.json",
     discovery: {
       enabled: parseBool(process.env.AIRCO_MDNS_ENABLED, true),
       idFile: process.env.AIRCO_BRIDGE_ID_FILE || server.bridgeIdFile || "data/bridge-id",

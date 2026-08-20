@@ -21,7 +21,10 @@ Returns bridge and API metadata for integrations that may be newer than the serv
     "discovery": true,
     "unitDiscovery": true,
     "presets": true,
-    "globalPresets": true
+    "globalPresets": true,
+    "automations": true,
+    "automationLog": true,
+    "manualOverride": true
   }
 }
 ```
@@ -44,7 +47,8 @@ Lists all configured units with their latest polled state. Each `airco` object a
 carries `bridgeManagedIdentity` (the bridge created this identity itself) and
 `identityShared` (another configured unit uses the same identity); the UI uses these to
 predict whether deleting the unit will also remove its account (see `DELETE`). Every
-item also has a `presets` array containing that unit's named presets.
+item also has a `presets` array containing that unit's named presets and an
+`automationOverride` object (or `null`) describing active manual control.
 `airco.addressManaged` is true when the bridge can re-resolve the unit through mDNS
 after its IP address changes.
 
@@ -56,9 +60,18 @@ clients can use the presence of the `presets` property as per-unit feature detec
 an empty array means presets are supported but none have been saved. Legacy servers
 omit the property entirely.
 
-Relevant `history` fields include the approximated current power in `currentWatts`,
+`automationOverride` is `null` during normal automation control. While manual control
+is active it contains `aircoId`, `startedAt` and `source`. Automation conditions remain
+live, but actions targeting that unit are paused until the unit is switched off or the
+override is explicitly cleared. Control-state changes received from the physical remote
+are recognized on the next unit status poll; changing sensor readings does not start an
+override.
+
+Relevant `history` fields include the current run's energy in `currentSession.energyKwh`,
 calendar totals in `dayTotalKwh`, `monthTotalKwh` and `monthly`, and the persistent,
-per-unit cumulative meter value in `totalKwh`.
+per-unit cumulative meter value in `totalKwh`. While the unit is on, `currentWatts`
+contains the live outdoor-unit estimate from operation-data code `0x90`; while off it is
+`0`. It is no longer inferred from the coarse 0.25-kWh run counter.
 
 Query parameters:
 
@@ -76,9 +89,35 @@ Relevant `status` fields:
 | `windDirectionUD` | vertical vane, `0..4` (`0` = auto) |
 | `windDirectionLR` | horizontal vane, `0..7` (`0` = auto) |
 | `entrust` | 3D auto on/off |
+| `compressorRunning` | compressor-running bit from receive-state byte 9 |
 | `indoorTemp` / `outdoorTemp` | measured temperatures in °C |
-| `electric` | current power value from the unit |
+| `electric` | current-run energy counter from the unit, in 0.25 kWh steps |
+| `operationData` | live current/power, compressor frequency, EEV position, discharge and coil temperatures, plus raw segments |
+| `operationDataError` | probe error text when basic status succeeded but operation data did not |
 | `errorCode` | `"00"` when healthy, otherwise `Mxx`/`Ex` fault code |
+| `isSelfCleanOperation` | combined self-clean flag: true for the device function or an automation clean cycle |
+| `deviceSelfCleanOperation` | raw self-clean flag reported by the unit |
+| `managedSelfCleanOperation` | true while a bridge-managed clean cycle is active |
+| `selfCleanSource` / `selfCleanUntil` | source (`device`, `automation`, or both) and optional managed end time |
+
+`status.operationData` contains:
+
+| Field | Meaning |
+| --- | --- |
+| `operatingCurrentAmps` | outdoor-unit operating current from `0x90` |
+| `powerWatts` | `operatingCurrentAmps × 230`, an estimated outdoor-unit value |
+| `powerStepWatts` / `powerUncertaintyWatts` | approximately 63 W per raw step and ±32 W quantisation uncertainty |
+| `powerScope` | `"outdoor-unit"`; the indoor fan is not included |
+| `includesIndoorFan` / `powerFactorAdjusted` | both `false` for the current estimate |
+| `compressorFrequencyHz` | inverter frequency; the segment's second byte is its high byte, not an indoor/outdoor selector |
+| `dischargeTemperatureC` | compressor discharge-pipe temperature |
+| `eevPulses` | raw electronic expansion-valve position; not a percentage |
+| `indoorCoilR1C` / `indoorCoilR3C` | two indoor heat-exchanger thermistors |
+| `rawSegments` | the original `[code, sel, OP2, OP3]` bytes, retained even for decoded zero values |
+
+The wattage estimate does not include the roughly 10–30 W indoor fan and assumes a
+230 V supply without a power-factor correction. Inverter PFC normally keeps the latter
+error modest, but it can matter most at low load.
 
 ### `POST /api/aircos/:id/refresh`
 
@@ -89,6 +128,21 @@ Forces an immediate poll and returns the fresh snapshot.
 All write endpoints take a JSON body, apply a read-modify-write cycle against the unit
 and return the updated snapshot. Writes to the same unit are queued, so concurrent
 requests will not conflict.
+
+Manual power-on, preset, temperature, mode, airflow and combined-settings commands
+start a persistent manual automation override when the unit is on. Integrations issuing
+commands as part of their own automation (for example a future Homey Flow action) can
+include `"automationOverride": false` to avoid claiming manual control. Power-off always
+allows local automation control to resume.
+
+### `POST /api/aircos/:id/automation-override`
+
+```json
+{ "active": false }
+```
+
+Clears manual control immediately so matching local automation actions can run again.
+Sending `true` explicitly starts manual control, but only while the unit is on.
 
 ### `POST /api/aircos/:id/power`
 
@@ -193,11 +247,123 @@ named in the request. Units added later do not automatically receive previous co
 
 ### `POST /api/aircos/:id/presets/:presetId/apply`
 
-Applies every setting in the selected preset to that unit in one queued update.
+Applies every setting in the selected preset to that unit in one queued update and
+starts manual control unless `"automationOverride": false` is supplied.
 
 ### `DELETE /api/aircos/:id/presets/:presetId`
 
 Deletes the selected preset only from that unit.
+
+## Automations
+
+Automations are directed graphs of condition blocks (`temperature`, `power`, `mode`, `time`),
+logic blocks (`and`, `or`) and action blocks (`apply-preset`, `set-power`). The service
+evaluates enabled flows in the background and persists them in
+`data/airco-automations.json`. Action paths are edge-triggered and each action has an
+internal five-minute cooldown to absorb rapidly oscillating conditions.
+
+Disabled flows continue evaluating their connected conditions for a live graphical
+preview, but their action blocks are never executed.
+
+Manual control is persisted per air conditioner in the same automation state file.
+Matching blocks remain visible as true, while their actions report that they are paused.
+Switching the unit off clears manual control automatically; the dashboard also provides
+a **Resume automations** action.
+
+A `set-power` action accepts `on`, `off`, or `clean`. The clean action switches the
+unit to low fan mode for `durationMinutes` (30 by default) and then turns it off. Its
+end time is persisted, so a service restart does not leave the fan running. Starting
+a preset or another power action cancels the pending clean shutdown. When the unit's
+current mode is `heat` or `fan`, the clean cycle is skipped and the unit switches off
+immediately, matching the appliance's SELF CLEAN restrictions. Retriggering a clean
+action while a bridge-managed clean cycle is already running leaves that cycle and
+its original end time untouched.
+
+### `GET /api/automations`
+
+Lists every graph together with transient `runtime` evaluation state. Runtime state
+includes the latest status/message, action trigger times and per-node results; it is
+not written to the automation file.
+
+### `POST /api/automations`
+
+Creates a graph. `PUT /api/automations/:id` replaces its editable values and
+`DELETE /api/automations/:id` removes it. A minimal payload is:
+
+```json
+{
+  "name": "Warm afternoon",
+  "enabled": true,
+  "nodes": [
+    {
+      "id": "temp-1",
+      "type": "temperature",
+      "position": { "x": 70, "y": 90 },
+      "config": {
+        "aircoId": "living-room",
+        "sensor": "indoor",
+        "operator": "gt",
+        "value": 25
+      }
+    },
+    {
+      "id": "action-1",
+      "type": "apply-preset",
+      "position": { "x": 400, "y": 90 },
+      "config": { "aircoId": "living-room", "presetId": "preset-id" }
+    }
+  ],
+  "edges": [{ "id": "edge-1", "from": "temp-1", "to": "action-1" }]
+}
+```
+
+Temperature operators are `gt`, `gte`, `lt` and `lte`. Time blocks contain `start`,
+`end` (`HH:MM`) and `days` (`0` Sunday through `6` Saturday) and use the service's
+local timezone. A `mode` condition selects `auto`, `cool`, `heat`, `fan`, or `dry`.
+A `power` condition accepts an optional `durationMinutes` from `0` through `10080`.
+For example, `{ "aircoId": "living-room", "state": "on", "durationMinutes": 60 }`
+only matches after the unit has continuously been on for at least one hour. The start
+time comes from persistent usage history, so an ongoing session survives a service
+restart.
+
+### `POST /api/automations/temperature-shortcut`
+
+Creates a ready-to-edit graphical flow containing guarded start and stop branches:
+
+```json
+{
+  "name": "Summer control",
+  "aircoId": "living-room",
+  "presetId": "preset-id",
+  "startTemperature": 25,
+  "stopStrategy": "outdoor",
+  "stopTemperature": 23.5,
+  "outdoorHysteresis": 1.5
+}
+```
+
+`stopStrategy` can be `outdoor`, `indoor` or `none`. Outdoor control uses a configurable
+`outdoorHysteresis` of 1.5 °C by default: with a 23.5 °C stop threshold, the start branch
+waits for at least 25 °C outdoors. Indoor control requires the stop threshold to be
+lower than the start threshold. Both strategies add an airco power-state condition so
+the two branches cannot repeatedly issue opposing commands. The stop branch requires
+the unit to have been on continuously for at least 30 minutes and the current operating
+mode to match the selected preset, so a new cooling session cannot be stopped too soon
+and manually starting Fan mode does not look like an active cooling session. Its action
+defaults to `clean` with a 30-minute duration, followed by automatic power-off.
+
+### `GET /api/automation-log`
+
+Returns the newest automation activity first. The optional `limit` parameter is capped
+at 500; `automationId` filters to one flow. Entries are recorded for executed and failed
+actions, the first cooldown skip in a matching period, and flow creation, changes,
+enable/disable and deletion. Action entries contain the evaluated condition messages
+and measured values that explain the decision.
+
+### `DELETE /api/automation-log`
+
+Clears the persistent activity log and returns `{ "removed": 42 }` with the number of
+discarded entries.
 
 ## Setup endpoints
 
