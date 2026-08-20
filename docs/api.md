@@ -14,7 +14,7 @@ Returns bridge and API metadata for integrations that may be newer than the serv
 ```json
 {
   "name": "AircoBridge",
-  "bridgeVersion": "1.3.0",
+  "bridgeVersion": "1.4.0",
   "bridgeId": "71bc0a85-836d-4ed7-94bb-8ff12193f378",
   "apiVersion": 1,
   "features": {
