@@ -6,6 +6,7 @@ const summary = document.getElementById("summary");
 const refreshAll = document.getElementById("refreshAll");
 const EDIT_PAUSE_MS = 30000;
 let pauseRefreshUntil = 0;
+const statusPageByAirco = new Map();
 
 const modeByNumber = {
   0: "auto",
@@ -102,15 +103,21 @@ function formatLocalDate(value) {
   return dateFormatter.format(value);
 }
 
-function formatWatts(value) {
-  if (value == null || Number.isNaN(Number(value))) return "-";
-  return `${Math.round(Number(value))} W`;
-}
-
 function formatKwh(value) {
   if (value == null || Number.isNaN(Number(value))) return "-";
   const fixed = Math.abs(Number(value)) < 10 ? Number(value).toFixed(2) : Number(value).toFixed(1);
   return `${fixed} kWh`;
+}
+
+function formatWatts(value) {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  const watts = Math.round(Number(value));
+  return watts === 0 ? "0 W" : `≈${watts} W`;
+}
+
+function formatMeasurement(value, digits, unit) {
+  if (value == null || Number.isNaN(Number(value))) return "-";
+  return `${Number(value).toFixed(digits)} ${unit}`;
 }
 
 function formatPowerHistory(history) {
@@ -149,6 +156,32 @@ function syncSegmentState(card, action, value) {
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+}
+
+function showStatusPage(card, page) {
+  const pageCount = card.querySelectorAll("[data-status-page]").length;
+  if (pageCount === 0) return;
+  const normalized = ((Number(page) || 0) % pageCount + pageCount) % pageCount;
+  const track = card.querySelector('[data-role="status-pages"]');
+  if (track) track.style.transform = `translateX(-${normalized * 100}%)`;
+  card.querySelectorAll("[data-status-page]").forEach((element, index) => {
+    element.setAttribute("aria-hidden", String(index !== normalized));
+  });
+  card.querySelectorAll(".status-page-dots i").forEach((dot, index) => {
+    dot.classList.toggle("active", index === normalized);
+  });
+  setText(card, "statusPageLabel", normalized === 0 ? "Overview" : "System details");
+  statusPageByAirco.set(card.dataset.id, normalized);
+}
+
+function setupStatusPages(card) {
+  card.querySelector('[data-role="status-page-previous"]')?.addEventListener("click", () => {
+    showStatusPage(card, (statusPageByAirco.get(card.dataset.id) || 0) - 1);
+  });
+  card.querySelector('[data-role="status-page-next"]')?.addEventListener("click", () => {
+    showStatusPage(card, (statusPageByAirco.get(card.dataset.id) || 0) + 1);
+  });
+  showStatusPage(card, statusPageByAirco.get(card.dataset.id) || 0);
 }
 
 function presetSummary(preset) {
@@ -210,6 +243,7 @@ function renderAirco(item) {
   const card = template.content.firstElementChild.cloneNode(true);
   const airco = item.airco;
   const status = item.status || {};
+  const operationData = status.operationData || {};
   const badge = card.querySelector('[data-field="online"]');
   const mode = status.operationModeName || modeByNumber[status.operationMode] || "unknown";
   const airflow = status.airFlowName || airflowByNumber[status.airFlow] || "unknown";
@@ -225,10 +259,21 @@ function renderAirco(item) {
   setText(card, "powerHistoryValue", powerHistory);
   setText(card, "indoor", status.indoorTemp == null ? "-" : `${status.indoorTemp} °C`);
   setText(card, "outdoor", status.outdoorTemp == null ? "-" : `${status.outdoorTemp} °C`);
-  const electricKwh = status.electric ?? item.history?.lastElectricKwh;
+  const electricKwh = item.history?.powerState === "on" && item.history?.currentSession
+    ? item.history.currentSession.energyKwh
+    : status.electric ?? item.history?.lastElectricKwh;
   setText(card, "electricKwh", electricKwh == null ? "-" : `${Number(electricKwh).toFixed(2)} kWh`);
   setText(card, "electricWatts", formatWatts(item.history?.currentWatts));
   setText(card, "monthTotal", formatKwh(item.history?.monthTotalKwh));
+  setText(card, "operatingCurrent", formatMeasurement(operationData.operatingCurrentAmps, 2, "A"));
+  setText(card, "compressorFrequency", formatMeasurement(operationData.compressorFrequencyHz, 1, "Hz"));
+  setText(card, "compressorState", item.status ? (status.compressorRunning ? "Running" : "Idle") : "Unknown");
+  card.querySelector('[data-status="compressor"]')
+    ?.classList.toggle("is-active", Boolean(status.compressorRunning));
+  setText(card, "eevPosition", operationData.eevPulses == null ? "-" : `${operationData.eevPulses} pulses`);
+  setText(card, "dischargeTemperature", formatMeasurement(operationData.dischargeTemperatureC, 1, "°C"));
+  setText(card, "indoorCoilR1", formatMeasurement(operationData.indoorCoilR1C, 1, "°C"));
+  setText(card, "indoorCoilR3", formatMeasurement(operationData.indoorCoilR3C, 1, "°C"));
   setText(card, "selfClean", status.isSelfCleanOperation ? "Active" : "Off");
   card.querySelector('[data-status="selfClean"]')
     ?.classList.toggle("is-active", Boolean(status.isSelfCleanOperation));
@@ -241,6 +286,7 @@ function renderAirco(item) {
   badge.textContent = item.online ? "Online" : "Offline";
   badge.classList.toggle("offline", !item.online);
   badge.setAttribute("aria-label", item.online ? "Air conditioner online" : "Air conditioner offline");
+  setVisible(card, "automationOverride", Boolean(item.automationOverride));
 
   setFormValue(card, "temperature", status.presetTemp);
   setFormValue(card, "mode", mode);
@@ -252,6 +298,7 @@ function renderAirco(item) {
   syncSegmentState(card, "vacant-preset", status.isVacantProperty ? "on" : "off");
   renderPresets(card, item);
   syncControlAvailability(card);
+  setupStatusPages(card);
 
   card.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -261,6 +308,10 @@ function renderAirco(item) {
 
   card.querySelector('[data-role="delete"]').addEventListener("click", () => {
     openDeleteDialog(item);
+  });
+
+  card.querySelector('[data-role="resume-automation"]')?.addEventListener("click", async () => {
+    await resumeAutomations(card);
   });
 
   const savePreset = card.querySelector('[data-role="save-preset"]');
@@ -296,6 +347,24 @@ async function applyPreset(card, preset) {
     await request(`/api/aircos/${id}/presets/${encodeURIComponent(preset.id)}/apply`, {
       method: "POST",
       body: "{}",
+    });
+    pauseRefreshUntil = 0;
+    await load({ force: true });
+  } catch (err) {
+    setText(card, "error", err.message);
+  } finally {
+    setControlsDisabled(card, false);
+    syncControlAvailability(card);
+  }
+}
+
+async function resumeAutomations(card) {
+  const id = encodeURIComponent(card.dataset.id);
+  setControlsDisabled(card, true);
+  try {
+    await request(`/api/aircos/${id}/automation-override`, {
+      method: "POST",
+      body: JSON.stringify({ active: false }),
     });
     pauseRefreshUntil = 0;
     await load({ force: true });
@@ -436,7 +505,9 @@ async function load({ force = false } = {}) {
   summary.textContent = `${online}/${data.aircos.length} online`;
 }
 
-root.addEventListener("focusin", () => pauseRefresh());
+root.addEventListener("focusin", (event) => {
+  if (event.target.matches("input, select, textarea")) pauseRefresh();
+});
 root.addEventListener("input", () => pauseRefresh());
 root.addEventListener("change", () => pauseRefresh());
 

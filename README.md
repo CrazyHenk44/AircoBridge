@@ -15,7 +15,13 @@ protocol tooling.
 - Web interface for power, target temperature, mode, fan speed, vanes and 3D auto.
 - Saves named, per-unit presets for restoring all controls with one click; a preset can
   optionally be copied to every currently configured unit.
-- Tracks power usage history (`data/airco-history.json`), including monthly totals.
+- Builds graphical automations from connected temperature, power, time, AND/OR and
+  action blocks, including a minimum on/off duration for power conditions. Flows run
+  locally on the bridge while the browser is closed.
+- Keeps a bounded local activity log explaining executed actions, matching sensor
+  values, cooldown skips, configuration changes and errors.
+- Shows estimated live outdoor-unit power plus technical compressor, valve and coil
+  values, and tracks usage history (`data/airco-history.json`) including monthly totals.
 - Interactive protocol-debug tool for reverse-engineering unknown status bytes.
 - Finds WF-RAC units that announce `_beaver._tcp.local`, stores a privacy-preserving
   discovery identity and follows later IP-address changes automatically.
@@ -121,9 +127,13 @@ When upgrading an existing Compose installation, check `.env`: older releases cr
 LAN IP for Homey and other LAN clients to connect. Then recreate the container with
 `make update` (published image) or `make up-local` (local source).
 
-History is stored in `data/airco-history.json`, and presets in
-`data/airco-presets.json`. Override the paths with `AIRCO_HISTORY_FILE` and
-`AIRCO_PRESETS_FILE` if needed.
+History is stored in `data/airco-history.json`, presets in `data/airco-presets.json`,
+graphical flows in `data/airco-automations.json`, and their latest 500 meaningful
+events in `data/airco-automation-log.json`. Override the paths with
+`AIRCO_HISTORY_FILE`, `AIRCO_PRESETS_FILE`, `AIRCO_AUTOMATIONS_FILE` and
+`AIRCO_AUTOMATION_LOG_FILE` if needed.
+Time blocks use the service's local timezone; Compose defaults `TZ` to
+`Europe/Amsterdam`, which can be changed in `.env`.
 
 By default, Compose binds the web UI to all host interfaces so LAN integrations can
 reach it. To limit both HTTP and discovery to the physical LAN on a multi-homed host,
@@ -167,7 +177,8 @@ Bug reports, compatibility reports and pull requests are welcome. See
 ## Credits
 
 Protocol knowledge builds on the reverse-engineering work of
-[jeatheak/Mitsubishi-WF-RAC-Integration](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration),
+[jeatheak/Mitsubishi-WF-RAC-Integration](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration)
+(in particular its [WF-RAC module reference](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration/blob/master/docs/wf-rac-module-reference.md)),
 [JobDoesburg/homebridge-mhi-wfrac](https://github.com/JobDoesburg/homebridge-mhi-wfrac)
 and [mcheijink/WF-RAC](https://github.com/mcheijink/WF-RAC).
 

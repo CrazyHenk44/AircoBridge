@@ -24,24 +24,179 @@
         </div>
       </div>
     </div>
-    <div class="topbar-actions">
-      <button id="refreshAll" type="button" class="secondary">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M15.3 6.2A6.5 6.5 0 1 0 16.4 12"></path>
-          <path d="M15.3 2.8v3.7h-3.7"></path>
-        </svg>
-        Refresh all
-      </button>
-      <button id="addAirco" type="button">
-        <svg viewBox="0 0 20 20" aria-hidden="true">
-          <path d="M10 4v12M4 10h12"></path>
-        </svg>
-        Add air conditioner
-      </button>
+    <div class="topbar-tools">
+      <nav class="view-tabs" aria-label="Main navigation">
+        <button id="showAircos" type="button" class="view-tab active" aria-pressed="true">Air conditioners</button>
+        <button id="showAutomations" type="button" class="view-tab" aria-pressed="false">Automations</button>
+      </nav>
+      <div class="topbar-actions" data-view-actions="aircos">
+        <button id="refreshAll" type="button" class="secondary">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M15.3 6.2A6.5 6.5 0 1 0 16.4 12"></path>
+            <path d="M15.3 2.8v3.7h-3.7"></path>
+          </svg>
+          Refresh all
+        </button>
+        <button id="addAirco" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 4v12M4 10h12"></path>
+          </svg>
+          Add air conditioner
+        </button>
+      </div>
+      <div class="topbar-actions automation-topbar-actions is-hidden" data-view-actions="automations">
+        <details id="automationFlowPicker" class="automation-flow-picker">
+          <summary aria-label="Choose a saved flow">
+            <span class="automation-picker-icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20">
+                <circle cx="5" cy="5" r="2"></circle>
+                <circle cx="15" cy="5" r="2"></circle>
+                <circle cx="15" cy="15" r="2"></circle>
+                <path d="M7 5h3a3 3 0 0 1 3 3v5M7 5h8"></path>
+              </svg>
+            </span>
+            <span class="automation-picker-copy">
+              <small>Saved flows</small>
+              <strong id="automationPickerName">Loading…</strong>
+            </span>
+            <span id="automationPickerStatus" class="automation-state-dot is-hidden" aria-hidden="true"></span>
+            <svg class="automation-picker-chevron" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="m6 8 4 4 4-4"></path>
+            </svg>
+          </summary>
+          <div class="automation-flow-menu">
+            <header>
+              <span>Saved flows</span>
+              <small id="automationPickerCount">0 flows</small>
+            </header>
+            <div id="automationList" class="automation-list"></div>
+          </div>
+        </details>
+        <button id="newAutomation" type="button">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 4v12M4 10h12"></path>
+          </svg>
+          New flow
+        </button>
+      </div>
     </div>
   </header>
 
   <main id="aircos" class="aircos"></main>
+
+  <main id="automations" class="automation-page is-hidden">
+    <section class="automation-shell">
+      <section class="automation-workspace">
+        <div id="automationEmpty" class="automation-empty">
+          <span class="automation-empty-icon" aria-hidden="true">⌁</span>
+          <h2>Build your first climate flow</h2>
+          <p>Drag conditions, logic and actions onto the canvas, then connect their ports.</p>
+          <button type="button" data-automation-empty="shortcut">Create temperature control</button>
+        </div>
+
+        <div id="automationEditor" class="automation-editor is-hidden">
+          <header class="automation-editor-head">
+            <div class="automation-title-fields">
+              <label>
+                <input id="automationName" type="text" maxlength="60" autocomplete="off" aria-label="Flow name">
+              </label>
+              <span id="automationStatus" class="automation-status" role="status"></span>
+            </div>
+            <div class="automation-editor-actions">
+              <label class="automation-enabled">
+                <input id="automationEnabled" type="checkbox">
+                <span>Enabled</span>
+              </label>
+              <button id="deleteAutomation" type="button" class="secondary automation-delete">Delete</button>
+              <button id="saveAutomation" type="button">Save flow</button>
+            </div>
+          </header>
+
+          <div class="automation-builder">
+            <div id="automationPaletteDock" class="automation-palette-dock">
+              <button id="automationPaletteToggle" type="button" class="automation-palette-toggle" aria-label="Add to automation" aria-controls="automationPalette" aria-expanded="false" title="Add blocks or create from a template">
+                <svg viewBox="0 0 20 20" aria-hidden="true">
+                  <path d="M10 4v12M4 10h12"></path>
+                </svg>
+              </button>
+              <aside id="automationPalette" class="automation-palette is-hidden" aria-label="Automation library">
+              <section class="automation-palette-section automation-palette-templates">
+                <span class="palette-heading">Templates</span>
+                <button id="temperatureShortcut" type="button" class="palette-block palette-template">
+                  <span aria-hidden="true">⌁</span><span>Temperature control<small>Create a start/clean + off flow with a 30-minute minimum runtime</small></span>
+                </button>
+              </section>
+              <div class="automation-palette-section automation-palette-conditions">
+                <span class="palette-heading">Conditions</span>
+                <button type="button" class="palette-block palette-condition" draggable="true" data-node-type="temperature">
+                  <span aria-hidden="true">🌡</span><span>Temperature<small>Indoor or outdoor</small></span>
+                </button>
+                <button type="button" class="palette-block palette-condition" draggable="true" data-node-type="power">
+                  <span aria-hidden="true">◉</span><span>Power state<small>Airco on or off</small></span>
+                </button>
+                <button type="button" class="palette-block palette-condition" draggable="true" data-node-type="mode">
+                  <span aria-hidden="true">◎</span><span>Operating mode<small>Cool, fan, heat, dry or auto</small></span>
+                </button>
+                <button type="button" class="palette-block palette-condition" draggable="true" data-node-type="time">
+                  <span aria-hidden="true">◷</span><span>Time window<small>Time and weekdays</small></span>
+                </button>
+              </div>
+              <div class="automation-palette-section automation-palette-logic">
+                <span class="palette-heading">Logic</span>
+                <button type="button" class="palette-block palette-logic" draggable="true" data-node-type="and">
+                  <span class="logic-symbol">EN</span><span>All conditions<small>Every input must match</small></span>
+                </button>
+                <button type="button" class="palette-block palette-logic" draggable="true" data-node-type="or">
+                  <span class="logic-symbol">OF</span><span>Any condition<small>One input is enough</small></span>
+                </button>
+              </div>
+              <div class="automation-palette-section automation-palette-actions">
+                <span class="palette-heading">Actions</span>
+                <button type="button" class="palette-block palette-action" draggable="true" data-node-type="apply-preset">
+                  <span aria-hidden="true">❄</span><span>Start preset<small>Apply saved settings</small></span>
+                </button>
+                <button type="button" class="palette-block palette-action" draggable="true" data-node-type="set-power">
+                  <span aria-hidden="true">⏻</span><span>Set power<small>On, off, or dry-out</small></span>
+                </button>
+              </div>
+              </aside>
+            </div>
+            <p id="automationHelp" class="automation-help-toast is-hidden" role="status"></p>
+
+            <div id="automationCanvasViewport" class="automation-canvas-viewport">
+              <div id="automationCanvas" class="automation-canvas" aria-label="Automation canvas">
+                <svg id="automationConnections" class="automation-connections" aria-hidden="true"></svg>
+                <div id="automationNodes" class="automation-nodes"></div>
+                <div id="automationCanvasHint" class="automation-canvas-hint">
+                  Use the + button to add your first block.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <details id="automationActivity" class="automation-activity">
+      <summary>
+        <span class="automation-activity-title">
+          <span class="automation-activity-icon" aria-hidden="true">↺</span>
+          <span><strong>Activity</strong><small id="automationActivitySummary">Recent automation events</small></span>
+        </span>
+        <span class="automation-activity-chevron" aria-hidden="true">⌄</span>
+      </summary>
+      <div class="automation-activity-body">
+        <div class="automation-activity-toolbar">
+          <p>Actions, errors, cooldowns and flow changes are kept locally (up to 500 entries).</p>
+          <div>
+            <button id="refreshAutomationActivity" type="button" class="secondary">Refresh</button>
+            <button id="clearAutomationActivity" type="button" class="secondary automation-delete">Clear log</button>
+          </div>
+        </div>
+        <div id="automationActivityList" class="automation-activity-list" aria-live="polite"></div>
+      </div>
+    </details>
+  </main>
 
   <template id="aircoTemplate">
     <section class="airco">
@@ -70,57 +225,141 @@
         </div>
       </header>
 
-      <section class="status-board" aria-label="Current air conditioner status">
-        <section class="status-group status-group-climate" aria-label="Climate">
-          <header class="status-group-head">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="M8 11.2V4.5a2 2 0 0 1 4 0v6.7a4 4 0 1 1-4 0Z"></path>
-              <path d="M10 7v6"></path>
-            </svg>
-            <h3>Climate</h3>
-          </header>
-          <dl class="status-metrics">
-            <div class="status-metric status-metric-current">
-              <dt>Indoor</dt>
-              <dd data-field="indoor"></dd>
-            </div>
-            <div class="status-metric">
-              <dt>Outdoor</dt>
-              <dd data-field="outdoor"></dd>
-            </div>
-            <div class="status-metric status-metric-self-clean" data-status="selfClean">
-              <dt>Self-clean</dt>
-              <dd data-field="selfClean"></dd>
-            </div>
-            <div class="status-metric status-metric-error" data-field="errorCodeBox" role="status">
-              <dt>Error code</dt>
-              <dd data-field="errorCode"></dd>
-            </div>
-          </dl>
-        </section>
+      <aside class="manual-control-banner is-hidden" data-field="automationOverride" aria-live="polite">
+        <span class="manual-control-icon" aria-hidden="true">✋</span>
+        <span class="manual-control-copy">
+          <strong>Manual control active</strong>
+          <small>Automation actions are paused until this unit is switched off.</small>
+        </span>
+        <button type="button" class="secondary" data-role="resume-automation">Resume automations</button>
+      </aside>
 
-        <section class="status-group status-group-energy" aria-label="Energy use">
-          <header class="status-group-head">
-            <svg viewBox="0 0 20 20" aria-hidden="true">
-              <path d="m11.4 1.8-6 9h4l-.8 7.4 6-9h-4l.8-7.4Z"></path>
-            </svg>
-            <h3>Energy use</h3>
-          </header>
-          <dl class="status-metrics">
-            <div class="status-metric">
-              <dt>Meter</dt>
-              <dd data-field="electricKwh"></dd>
-            </div>
-            <div class="status-metric status-metric-current">
-              <dt>Now</dt>
-              <dd data-field="electricWatts"></dd>
-            </div>
-            <div class="status-metric">
-              <dt>This month</dt>
-              <dd data-field="monthTotal"></dd>
-            </div>
-          </dl>
-        </section>
+      <section class="status-display" data-role="status-display" aria-label="Air conditioner display">
+        <div class="status-display-pages">
+          <div class="status-display-track" data-role="status-pages">
+            <section class="status-board status-page" data-status-page="0" aria-label="Current air conditioner status">
+              <section class="status-group status-group-climate" aria-label="Climate">
+                <header class="status-group-head">
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M8 11.2V4.5a2 2 0 0 1 4 0v6.7a4 4 0 1 1-4 0Z"></path>
+                    <path d="M10 7v6"></path>
+                  </svg>
+                  <h3>Climate</h3>
+                </header>
+                <dl class="status-metrics">
+                  <div class="status-metric status-metric-current">
+                    <dt>Indoor</dt>
+                    <dd data-field="indoor"></dd>
+                  </div>
+                  <div class="status-metric">
+                    <dt>Outdoor</dt>
+                    <dd data-field="outdoor"></dd>
+                  </div>
+                  <div class="status-metric status-metric-self-clean" data-status="selfClean">
+                    <dt>Self-clean</dt>
+                    <dd data-field="selfClean"></dd>
+                  </div>
+                  <div class="status-metric status-metric-error" data-field="errorCodeBox" role="status">
+                    <dt>Error code</dt>
+                    <dd data-field="errorCode"></dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section class="status-group status-group-energy" aria-label="Energy use">
+                <header class="status-group-head">
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="m11.4 1.8-6 9h4l-.8 7.4 6-9h-4l.8-7.4Z"></path>
+                  </svg>
+                  <h3>Energy use</h3>
+                </header>
+                <dl class="status-metrics">
+                  <div class="status-metric">
+                    <dt>This run</dt>
+                    <dd data-field="electricKwh"></dd>
+                  </div>
+                  <div class="status-metric status-metric-current">
+                    <dt>Now</dt>
+                    <dd data-field="electricWatts" title="Estimated outdoor-unit power at 230 V"></dd>
+                  </div>
+                  <div class="status-metric">
+                    <dt>This month</dt>
+                    <dd data-field="monthTotal"></dd>
+                  </div>
+                </dl>
+              </section>
+            </section>
+
+            <section class="status-board status-page status-board-technical" data-status-page="1"
+                     aria-label="Technical system values" aria-hidden="true">
+              <section class="status-group" aria-label="System performance">
+                <header class="status-group-head">
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M3 14.5a7.5 7.5 0 0 1 14 0"></path>
+                    <path d="m10 11 3.5-3.5"></path>
+                    <path d="M5.5 14.5h9"></path>
+                  </svg>
+                  <h3>System performance</h3>
+                </header>
+                <dl class="status-metrics">
+                  <div class="status-metric status-metric-current">
+                    <dt>Outdoor current</dt>
+                    <dd data-field="operatingCurrent"></dd>
+                  </div>
+                  <div class="status-metric status-metric-compressor" data-status="compressor">
+                    <dt>Compressor</dt>
+                    <dd>
+                      <span data-field="compressorFrequency"></span>
+                      <small data-field="compressorState"></small>
+                    </dd>
+                  </div>
+                  <div class="status-metric">
+                    <dt>EEV position</dt>
+                    <dd data-field="eevPosition"></dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section class="status-group" aria-label="System temperatures">
+                <header class="status-group-head">
+                  <svg viewBox="0 0 20 20" aria-hidden="true">
+                    <path d="M8 11.2V4.5a2 2 0 0 1 4 0v6.7a4 4 0 1 1-4 0Z"></path>
+                    <path d="M10 7v6"></path>
+                  </svg>
+                  <h3>System temperatures</h3>
+                </header>
+                <dl class="status-metrics">
+                  <div class="status-metric">
+                    <dt>Discharge</dt>
+                    <dd data-field="dischargeTemperature"></dd>
+                  </div>
+                  <div class="status-metric">
+                    <dt>Coil R1</dt>
+                    <dd data-field="indoorCoilR1"></dd>
+                  </div>
+                  <div class="status-metric">
+                    <dt>Coil R3</dt>
+                    <dd data-field="indoorCoilR3"></dd>
+                  </div>
+                </dl>
+              </section>
+            </section>
+          </div>
+        </div>
+        <nav class="status-display-navigation" aria-label="Display pages">
+          <button type="button" data-role="status-page-previous" aria-label="Previous display page" title="Previous page">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5"></path></svg>
+          </button>
+          <span class="status-page-position">
+            <span data-field="statusPageLabel">Overview</span>
+            <span class="status-page-dots" aria-hidden="true">
+              <i class="active"></i><i></i>
+            </span>
+          </span>
+          <button type="button" data-role="status-page-next" aria-label="Next display page" title="Next page">
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 5 5 5-5 5"></path></svg>
+          </button>
+        </nav>
       </section>
 
       <form class="controls">
@@ -441,6 +680,75 @@
     </form>
   </dialog>
 
+  <dialog id="temperatureShortcutDialog" class="wizard shortcut-dialog" aria-labelledby="temperatureShortcutTitle">
+    <form method="dialog" class="wizard-form" data-shortcut="form" novalidate>
+      <header class="wizard-head">
+        <div>
+          <span class="dialog-kicker">Flow shortcut</span>
+          <h2 id="temperatureShortcutTitle">Temperature control</h2>
+          <p>Creates a complete graphical flow with guarded on and off branches.</p>
+        </div>
+        <button type="button" class="icon-button" data-shortcut="close" aria-label="Close" title="Close">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m5 5 10 10M15 5 5 15"></path></svg>
+        </button>
+      </header>
+
+      <label>
+        <span class="label-head">Name</span>
+        <input name="shortcutName" type="text" maxlength="60" value="Temperature control" required>
+      </label>
+      <div class="split">
+        <label>
+          <span class="label-head">Air conditioner</span>
+          <select name="shortcutAirco" required></select>
+        </label>
+        <label>
+          <span class="label-head">Preset to start</span>
+          <select name="shortcutPreset" required></select>
+        </label>
+      </div>
+
+      <section class="shortcut-branch shortcut-branch-on">
+        <span class="shortcut-branch-label">ON branch</span>
+        <p>When indoor temperature is above <span class="shortcut-temperature"><input name="shortcutStart" type="number" min="10" max="35" step="0.5" value="25"> °C</span> and the airco is off, start the preset.</p>
+      </section>
+
+      <fieldset class="shortcut-stop-options">
+        <legend class="label-head">Switch-off strategy</legend>
+        <label class="choice">
+          <input type="radio" name="shortcutStopStrategy" value="outdoor" checked>
+          <span><strong>When outside gets cooler</strong><small>Useful when continued air conditioning is no longer worthwhile.</small></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="shortcutStopStrategy" value="indoor">
+          <span><strong>When the room cools down</strong><small>Uses the bridge as an external thermostat.</small></span>
+        </label>
+        <label class="choice">
+          <input type="radio" name="shortcutStopStrategy" value="none">
+          <span><strong>Do not switch off automatically</strong><small>The air conditioner's own thermostat controls its compressor.</small></span>
+        </label>
+      </fieldset>
+
+      <section class="shortcut-branch shortcut-branch-off" data-shortcut="stopBranch">
+        <span class="shortcut-branch-label">OFF branch</span>
+        <p><span data-shortcut="stopCopy">When outdoor temperature is below</span> <span class="shortcut-temperature"><input name="shortcutStop" type="number" min="-20" max="40" step="0.5" value="23.5"> °C</span> and the airco has been on for at least 30 minutes, run Clean for 30 minutes and then switch it off.</p>
+        <label class="shortcut-hysteresis" data-shortcut="hysteresisRow">
+          <span>Outdoor hysteresis</span>
+          <span class="shortcut-temperature"><input name="shortcutHysteresis" type="number" min="0.5" max="10" step="0.5" value="1.5"> °C</span>
+        </label>
+        <small data-shortcut="guardCopy">The on branch waits until it is at least 25 °C outdoors, creating a 1.5 °C safety gap.</small>
+      </section>
+
+      <p class="error wizard-error" data-shortcut="error" role="alert"></p>
+      <footer class="wizard-foot">
+        <span class="wizard-foot-spacer"></span>
+        <button type="button" class="secondary" data-shortcut="cancel">Cancel</button>
+        <button type="submit" data-shortcut="create">Create flow</button>
+      </footer>
+    </form>
+  </dialog>
+
   <script src="/app.js"></script>
+  <script src="/automations.js"></script>
 </body>
 </html>
