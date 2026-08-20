@@ -43,7 +43,7 @@ async function main() {
   let result;
 
   if (cmd === "status") {
-    const { raw, status } = await client.getStatus();
+    const { raw, status } = await client.getStatusWithOperationData();
     result = {
       parsed: status.toJSON(),
       meta: {

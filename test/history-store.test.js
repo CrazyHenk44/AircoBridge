@@ -23,7 +23,7 @@ test("history records a completed power session", (t) => {
   assert.equal(summary.lastSession.energyKwh, 0.5);
   assert.equal(summary.lastSession.durationMs, 3_600_000);
   assert.ok(Math.abs(summary.lastSession.averageWatts - 500) < 1e-9);
-  assert.ok(Math.abs(summary.currentWatts - 500) < 1e-9);
+  assert.equal(summary.currentWatts, 0);
   assert.equal(summary.totalKwh, 0.5);
   assert.equal(summary.sessions.length, 1);
 });
@@ -105,4 +105,78 @@ test("monthly and total energy survive more than 500 sessions", (t) => {
   assert.equal(store.entry("test-unit").sessions.length, 500);
   assert.ok(Math.abs(summary.monthTotalKwh - expectedKwh) < 1e-9);
   assert.ok(Math.abs(summary.totalKwh - expectedKwh) < 1e-9);
+});
+
+test("a retained counter becomes the baseline of a new run", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "airco-history-baseline-test-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const store = new HistoryStore(path.join(directory, "history.json"));
+  const before = new Date("2026-08-15T09:00:00.000Z");
+  const started = new Date("2026-08-15T10:00:00.000Z");
+
+  store.recordPoll("test-unit", { operation: false, electric: 9.25 }, before);
+  let summary = store.recordPoll("test-unit", { operation: true, electric: 9.25 }, started);
+  assert.equal(summary.currentSession.energyKwh, 0);
+  assert.equal(summary.currentWatts, null);
+
+  summary = store.recordPoll("test-unit", { operation: true, electric: 0 }, new Date("2026-08-15T10:01:00.000Z"));
+  assert.equal(summary.currentSession.energyKwh, 0);
+  summary = store.recordPoll("test-unit", { operation: true, electric: 0.25 }, new Date("2026-08-15T10:31:00.000Z"));
+  assert.equal(summary.currentSession.energyKwh, 0.25);
+
+  summary = store.recordPoll("test-unit", { operation: false, electric: 0.25 }, new Date("2026-08-15T10:32:00.000Z"));
+  assert.equal(summary.lastSession.energyKwh, 0.25);
+  assert.equal(summary.totalKwh, 0.25);
+});
+
+test("an active legacy session is rebased instead of counting its stale value", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "airco-history-rebase-test-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const historyFile = path.join(directory, "history.json");
+  fs.writeFileSync(historyFile, JSON.stringify({
+    version: 2,
+    aircos: {
+      "test-unit": {
+        lastPowerState: "on",
+        lastPowerOnAt: "2026-08-15T09:48:39.137Z",
+        currentSession: {
+          startedAt: "2026-08-15T09:48:39.137Z",
+          lastSeenAt: "2026-08-15T09:48:39.137Z",
+          energyKwh: 9.25,
+        },
+        completedEnergyKwh: 10,
+        monthly: {},
+        sessions: [],
+      },
+    },
+  }));
+
+  const store = new HistoryStore(historyFile);
+  const summary = store.recordPoll(
+    "test-unit",
+    { operation: true, electric: 9.25 },
+    new Date("2026-08-15T10:00:00.000Z")
+  );
+  assert.equal(summary.currentSession.energyKwh, 0);
+  assert.equal(summary.totalKwh, 10);
+});
+
+test("history exposes direct operation-data wattage only while running", (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "airco-history-watts-test-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const store = new HistoryStore(path.join(directory, "history.json"));
+
+  let summary = store.recordPoll("test-unit", {
+    operation: true,
+    electric: 0,
+    operationData: { powerWatts: 378.8235294117647 },
+  }, new Date("2026-08-16T10:00:00.000Z"));
+  assert.equal(summary.currentWatts, 378.8235294117647);
+
+  summary = store.recordPoll("test-unit", {
+    operation: false,
+    electric: 0,
+    operationData: { powerWatts: 42 },
+  }, new Date("2026-08-16T10:01:00.000Z"));
+  assert.equal(summary.currentWatts, 0);
 });

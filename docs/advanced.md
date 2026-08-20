@@ -59,7 +59,13 @@ configure a unit by hand instead, add an entry to the `aircos` array:
 Multiple units can run in one service. Power history and consumption are tracked
 automatically from the polled status and stored in `data/airco-history.json` (override
 with `AIRCO_HISTORY_FILE`). Named presets are stored in `data/airco-presets.json`
-(override with `AIRCO_PRESETS_FILE`).
+(override with `AIRCO_PRESETS_FILE`). Graphical automations are stored in
+`data/airco-automations.json` (override with `AIRCO_AUTOMATIONS_FILE`). Time-window
+blocks use the process timezone; set `TZ` explicitly when running outside Compose.
+Persistent manual-control overrides are kept in that same automations file, so a bridge
+restart cannot unexpectedly hand an active manual session back to an automation.
+Automation activity is stored separately in `data/airco-automation-log.json` and is
+bounded to the latest 500 entries (override with `AIRCO_AUTOMATION_LOG_FILE`).
 
 For Docker Compose, the HTTP bind address, host port and optional mDNS interface are set
 through `.env`. Compose uses host networking, so the port is not translated by Docker:
@@ -67,6 +73,7 @@ through `.env`. Compose uses host networking, so the port is not translated by D
 ```sh
 AIRCO_HTTP_BIND=0.0.0.0
 AIRCO_HTTP_PORT=3000
+TZ=Europe/Amsterdam
 AIRCO_MDNS_INTERFACE=eth0
 ```
 

@@ -70,12 +70,13 @@ into the outgoing packet.
 - `windDirectionLR`: horizontal vane, 0..7 with labels: auto, left/left, left/middle,
   middle/middle, middle/right, right/right, left/right, right/left.
 - `entrust`, `coolHotJudge`, `modelNo`, `isVacantProperty`,
-  `isSelfCleanOperation`, `isSelfCleanReset`.
+  `isSelfCleanOperation`, `isSelfCleanReset`, and `compressorRunning` from
+  `state[9] & 0x02`.
 - `indoorTemp`: indoor temperature from variable block `[128, 32, byte, flags]`,
   converted with the lookup table from `JobDoesburg/homebridge-mhi-wfrac`.
 - `outdoorTemp`: outdoor temperature from variable block `[128, 16, byte, flags]`,
   converted with the lookup table from `JobDoesburg/homebridge-mhi-wfrac`.
-- `electric`: current/energy value from variable block `[148, 16, low, high]`,
+- `electric`: current-run energy counter from variable block `[148, 16, low, high]`,
   computed as little-endian `uint16 * 0.25`.
 - `errorCode`: fault code from status byte 6: `00`, `Mxx` or `Ex`.
 
@@ -85,6 +86,35 @@ data offset 19. Known blocks:
 - `[128, 32, value, flags]`: indoor temperature.
 - `[128, 16, value, flags]`: outdoor temperature.
 - `[148, 16, low, high]`: electric value, little-endian `uint16 * 0.25`.
+
+## Live operation data
+
+Values not pushed by an ordinary status poll are requested with `setAirconStat`, but
+the request is read-only. The COMMAND state is 18 zero bytes with only byte 5 set to
+`0xFF`; it therefore contains no set-bits and cannot write power, mode, setpoint, fan or
+vane state. Its trailer contains one to three `[code, 0xFF, 0xFF, 0xFF]` requests. The
+answer is parsed from the RECEIVE trailer in that same POST response.
+
+The service polls two batches, at least one second apart, every normal 30–60 second
+status interval:
+
+- `0x90`, `0x11`, `0x85`: outdoor current, compressor frequency and discharge
+  temperature.
+- `0x13`, `0x81`, `0x87`: EEV position and both indoor coil thermistors.
+
+The compressor-frequency segment's second byte is a numeric high byte. It starts at
+`0x10` and continues through `0x11`, `0x12`, and so on as frequency rises; it is not the
+indoor/outdoor selector used by code `0x80`. Raw four-byte segments are always retained
+because some firmware reports a valid-looking zero for frequency and current even under
+load.
+
+Live power is estimated as `OP2 × 14/51 × 230`. One raw step is about 0.27 A or 63 W,
+so the displayed value has approximately ±32 W quantisation uncertainty. It covers the
+outdoor unit, excludes the roughly 10–30 W indoor fan, assumes 230 V and does not apply
+a power-factor correction. The two coil channels use the NTC divider curve; around raw
+byte 61 one byte step is about 0.4 K, so small differences between them are invisible.
+
+Protocol source: [Mitsubishi WF-RAC module reference, sections 5.3 and 5.4](https://github.com/jeatheak/Mitsubishi-WF-RAC-Integration/blob/master/docs/wf-rac-module-reference.md#53-requesting-anything-else--the-generic-path).
 
 The normal web interface no longer shows raw diagnostics. Raw byte tables remain
 available through `GET /api/aircos/:id?debug=1` for parser work.

@@ -6,6 +6,13 @@ const { INDOOR_TEMP_LIST, OUTDOOR_TEMP_LIST } = require("./temp-lookups");
 
 const DEFAULT_PORT = 51443;
 const DEFAULT_USER_AGENT = "smartmair_app[1.4.005]";
+const OPERATION_DATA_MIN_REQUEST_INTERVAL_MS = 1000;
+const NOMINAL_POWER_VOLTAGE = 230;
+const OPERATION_DATA_BATCHES = Object.freeze([
+  Object.freeze([0x90, 0x11, 0x85]),
+  Object.freeze([0x13, 0x81, 0x87]),
+]);
+const NO_VARIABLE_DATA_SEGMENT = Object.freeze([0xff, 0xff, 0xff, 0xff]);
 
 const MODES = {
   auto: 0,
@@ -175,15 +182,97 @@ function crc16ccitt(bytes) {
   return crc & 0xffff;
 }
 
-function makePacket(body18Bytes) {
+function makePacket(body18Bytes, segments = [NO_VARIABLE_DATA_SEGMENT]) {
   if (!Array.isArray(body18Bytes) || body18Bytes.length !== 18) {
     throw new Error("makePacket expects exactly 18 bytes");
   }
+  if (!Array.isArray(segments) || segments.length > 255 || segments.some(
+    (segment) => !Array.isArray(segment) || segment.length !== 4
+  )) {
+    throw new Error("makePacket expects zero or more four-byte segments");
+  }
 
-  const packetWithoutCrc = body18Bytes.concat([1, 255, 255, 255, 255]);
+  const packetWithoutCrc = body18Bytes.concat([segments.length], segments.flat());
   const crc = crc16ccitt(packetWithoutCrc);
 
   return packetWithoutCrc.concat([crc & 0xff, (crc >> 8) & 0xff]);
+}
+
+function emptyOperationState() {
+  const bytes = Array(18).fill(0);
+  bytes[5] = 0xff;
+  return bytes;
+}
+
+function operationDataRequestBase64(codes) {
+  if (!Array.isArray(codes) || codes.length < 1 || codes.length > 3) {
+    throw new Error("Operation-data requests must contain 1 to 3 codes");
+  }
+  if (codes.some((code) => !Number.isInteger(code) || code < 0 || code > 0xff)) {
+    throw new Error("Operation-data codes must be bytes");
+  }
+
+  const requests = codes.map((code) => [code, 0xff, 0xff, 0xff]);
+  const command = makePacket(emptyOperationState(), requests);
+  const receive = makePacket(emptyOperationState());
+  return toUnsignedBuffer(command.concat(receive)).toString("base64");
+}
+
+function coilTemperatureFromByte(value) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw) || raw <= 0 || raw > 0xff) return null;
+
+  const resistance = 1912 * (367 / raw - 1);
+  if (!Number.isFinite(resistance) || resistance <= 0) return null;
+  return 1 / (1 / 298.15 + Math.log(resistance / 5200) / 3900) - 273.15;
+}
+
+function rawOperationSegment(block) {
+  const bytes = block.bytes.map(unsignedByte);
+  const [code, selector, op2, op3] = bytes;
+  return {
+    code,
+    selector,
+    op2,
+    op3,
+    bytes,
+    hex: bytes.map((value) => `0x${value.toString(16).padStart(2, "0")}`),
+  };
+}
+
+function decodeOperationData(variableBlocks) {
+  const requestedCodes = new Set(OPERATION_DATA_BATCHES.flat());
+  const rawSegments = (Array.isArray(variableBlocks) ? variableBlocks : [])
+    .filter((block) => Array.isArray(block?.bytes) && requestedCodes.has(unsignedByte(block.bytes[0])))
+    .map(rawOperationSegment);
+  const byCode = new Map(rawSegments.map((segment) => [segment.code, segment]));
+  const current = byCode.get(0x90);
+  const frequency = byCode.get(0x11);
+  const discharge = byCode.get(0x85);
+  const eev = byCode.get(0x13);
+  const coilR1 = byCode.get(0x81);
+  const coilR3 = byCode.get(0x87);
+  const operatingCurrentAmps = current && current.op2 !== 0xff ? current.op2 * 14 / 51 : null;
+  const powerStepWatts = 14 / 51 * NOMINAL_POWER_VOLTAGE;
+
+  return {
+    operatingCurrentAmps,
+    powerWatts: operatingCurrentAmps == null ? null : operatingCurrentAmps * NOMINAL_POWER_VOLTAGE,
+    powerVoltage: NOMINAL_POWER_VOLTAGE,
+    powerStepWatts,
+    powerUncertaintyWatts: powerStepWatts / 2,
+    powerScope: "outdoor-unit",
+    includesIndoorFan: false,
+    powerFactorAdjusted: false,
+    compressorFrequencyHz: frequency && frequency.selector !== 0xff && frequency.op2 !== 0xff
+      ? (frequency.selector - 0x10) * 25.6 + frequency.op2 * 0.1
+      : null,
+    dischargeTemperatureC: discharge && discharge.op2 !== 0xff ? discharge.op2 / 2 + 32 : null,
+    eevPulses: eev && eev.op2 !== 0xff ? eev.op2 : null,
+    indoorCoilR1C: coilR1 && coilR1.op2 !== 0xff ? coilTemperatureFromByte(coilR1.op2) : null,
+    indoorCoilR3C: coilR3 && coilR3.op2 !== 0xff ? coilTemperatureFromByte(coilR3.op2) : null,
+    rawSegments,
+  };
 }
 
 function normalizeChoice(value, choices, field) {
@@ -215,6 +304,7 @@ class WfracStatus {
     this.isVacantProperty = 0;
     this.isSelfCleanOperation = false;
     this.isSelfCleanReset = false;
+    this.compressorRunning = false;
     this.indoorTemp = null;
     this.indoorTempByte = null;
     this.outdoorTemp = null;
@@ -222,6 +312,8 @@ class WfracStatus {
     this.errorCode = "00";
     this.electric = null;
     this.variableBlocks = [];
+    this.operationData = null;
+    this.operationDataError = null;
   }
 
   static fromBase64(base64) {
@@ -248,9 +340,10 @@ class WfracStatus {
     status.windDirectionLR = (data[12] & 3) === 1 ? 0 : findMatch(data[11] & 31, [0, 1, 2, 3, 4, 5, 6], 1);
     status.entrust = (data[12] & 12) === 4;
     status.coolHotJudge = (data[8] & 8) <= 0;
+    status.compressorRunning = (data[9] & 0x02) === 0x02;
     status.modelNo = findMatch(data[0] & 127, [0, 1, 2]);
     status.isVacantProperty = data[10] & 1;
-    status.isSelfCleanOperation = false;
+    status.isSelfCleanOperation = (data[15] & 1) === 1;
     status.isSelfCleanReset = false;
     const code = data[6] & 127;
     if (code === 0) status.errorCode = "00";
@@ -500,6 +593,7 @@ class WfracStatus {
       isSelfCleanOperation: this.isSelfCleanOperation,
       selfCleanOperationLabel: this.isSelfCleanOperation ? "Self-clean active" : "Self-clean off",
       isSelfCleanReset: this.isSelfCleanReset,
+      compressorRunning: this.compressorRunning,
       indoorTemp: this.indoorTemp,
       indoorTempByte: this.indoorTempByte,
       outdoorTemp: this.outdoorTemp,
@@ -507,6 +601,8 @@ class WfracStatus {
       errorCode: this.errorCode,
       electric: this.electric,
       electricUnit: "WF-RAC electric",
+      operationData: this.operationData,
+      operationDataError: this.operationDataError,
     };
 
     if (debug) {
@@ -614,6 +710,46 @@ class WfracClient {
     return { raw, status: WfracStatus.fromBase64(airconStat) };
   }
 
+  async requestOperationData(codes) {
+    const raw = await this.call("setAirconStat", {
+      airconId: this.airconId,
+      airconStat: operationDataRequestBase64(codes),
+    });
+    const airconStat = raw?.contents?.airconStat || raw?.airconStat;
+    if (!airconStat) throw new Error(`No airconStat in operation-data response: ${JSON.stringify(raw)}`);
+    return { raw, status: WfracStatus.fromBase64(airconStat) };
+  }
+
+  async getStatusWithOperationData() {
+    let latest = null;
+    let operationDataError = null;
+    const operationBlocks = [];
+    let previousRequestStartedAt = null;
+
+    for (const codes of OPERATION_DATA_BATCHES) {
+      try {
+        if (previousRequestStartedAt != null) {
+          const waitMs = OPERATION_DATA_MIN_REQUEST_INTERVAL_MS - (Date.now() - previousRequestStartedAt);
+          if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+        }
+        previousRequestStartedAt = Date.now();
+        latest = await this.requestOperationData(codes);
+        const requested = new Set(codes);
+        operationBlocks.push(...latest.status.variableBlocks.filter(
+          (block) => requested.has(unsignedByte(block.bytes?.[0]))
+        ));
+      } catch (error) {
+        operationDataError = error;
+        break;
+      }
+    }
+
+    if (!latest) latest = await this.getStatus();
+    latest.status.operationData = decodeOperationData(operationBlocks);
+    latest.status.operationDataError = operationDataError?.message || null;
+    return latest;
+  }
+
   async setStatus(status) {
     if (!(status instanceof WfracStatus)) throw new Error("setStatus expects WfracStatus");
     return this.call("setAirconStat", {
@@ -648,8 +784,11 @@ module.exports = {
   WfracStatus,
   byteTable,
   candidateDecodes,
+  coilTemperatureFromByte,
   crc16ccitt,
+  decodeOperationData,
   insideTempFromByte,
+  operationDataRequestBase64,
   outsideTempFromByte,
   parseVariableBlocks,
 };

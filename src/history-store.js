@@ -35,13 +35,6 @@ function nonNegativeNumber(value) {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function maxKnownEnergy(...values) {
-  const numbers = values
-    .map(nonNegativeNumber)
-    .filter((value) => value != null);
-  return numbers.length > 0 ? Math.max(...numbers) : null;
-}
-
 function overlapMs(start, end, bucketStart, bucketEnd) {
   const left = Math.max(start.getTime(), bucketStart.getTime());
   const right = Math.min(end.getTime(), bucketEnd.getTime());
@@ -51,6 +44,43 @@ function overlapMs(start, end, bucketStart, bucketEnd) {
 function kwhToWatts(kwh, durationMs) {
   if (!Number.isFinite(kwh) || !Number.isFinite(durationMs) || durationMs <= 0) return null;
   return (kwh / durationMs) * 3_600_000_000;
+}
+
+function trackSessionEnergy(session, electric) {
+  let changed = false;
+  if (session.counterTracking !== true) {
+    // Older sessions treated the device's retained value as fresh consumption.
+    // Start from the current counter instead; completed history is left untouched.
+    session.counterTracking = true;
+    session.energyKwh = electric == null ? null : 0;
+    session.counterBaseline = electric;
+    session.counterResetSeen = electric === 0;
+    changed = true;
+  }
+  if (electric == null) return changed;
+
+  let baseline = nonNegativeNumber(session.counterBaseline);
+  if (baseline == null) {
+    baseline = electric;
+    session.counterBaseline = electric;
+    session.counterResetSeen = electric === 0;
+    if (session.energyKwh == null) session.energyKwh = 0;
+    changed = true;
+  }
+  if (session.counterResetSeen !== true && electric < baseline) {
+    session.counterResetSeen = true;
+    changed = true;
+  }
+
+  const measuredEnergy = session.counterResetSeen === true
+    ? electric
+    : Math.max(0, electric - baseline);
+  const previousEnergy = nonNegativeNumber(session.energyKwh);
+  if (previousEnergy == null || measuredEnergy > previousEnergy) {
+    session.energyKwh = measuredEnergy;
+    changed = true;
+  }
+  return changed;
 }
 
 function energySliceForRange(session, rangeStart, rangeEnd) {
@@ -93,10 +123,7 @@ function normalizeEntry(entry) {
   }
 
   if (entry.currentSession && typeof entry.currentSession === "object") {
-    entry.currentSession.energyKwh = maxKnownEnergy(
-      entry.currentSession.energyKwh,
-      entry.lastElectricKwh
-    );
+    entry.currentSession.energyKwh = nonNegativeNumber(entry.currentSession.energyKwh);
   }
   return entry;
 }
@@ -189,15 +216,19 @@ class HistoryStore {
           startedAt: nowIso,
           source: "poll",
           lastSeenAt: nowIso,
-          energyKwh: electric,
+          energyKwh: electric == null ? null : 0,
+          counterTracking: true,
+          counterBaseline: electric,
+          counterResetSeen: electric === 0,
         };
         shouldSave = true;
       } else {
         entry.lastPowerOffAt = nowIso;
         if (entry.currentSession) {
+          if (trackSessionEnergy(entry.currentSession, electric)) shouldSave = true;
           const startedAt = parseDate(entry.currentSession.startedAt);
           const durationMs = startedAt ? Math.max(0, now.getTime() - startedAt.getTime()) : 0;
-          const energyKwh = maxKnownEnergy(entry.currentSession.energyKwh, electric);
+          const energyKwh = nonNegativeNumber(entry.currentSession.energyKwh);
           const averageWatts = energyKwh == null ? null : kwhToWatts(energyKwh, durationMs);
 
           const session = normalizeSession({
@@ -220,19 +251,17 @@ class HistoryStore {
           startedAt: nowIso,
           source: "poll",
           lastSeenAt: nowIso,
-          energyKwh: electric,
+          energyKwh: electric == null ? null : 0,
+          counterTracking: true,
+          counterBaseline: electric,
+          counterResetSeen: electric === 0,
         };
         if (!entry.lastPowerOnAt) entry.lastPowerOnAt = nowIso;
         if (!entry.lastPowerChangedAt) entry.lastPowerChangedAt = nowIso;
         shouldSave = true;
       } else {
         entry.currentSession.lastSeenAt = nowIso;
-        const previousEnergy = nonNegativeNumber(entry.currentSession.energyKwh);
-        const nextEnergy = maxKnownEnergy(previousEnergy, electric);
-        if (nextEnergy != null && (previousEnergy == null || nextEnergy > previousEnergy)) {
-          entry.currentSession.energyKwh = nextEnergy;
-          shouldSave = true;
-        }
+        if (trackSessionEnergy(entry.currentSession, electric)) shouldSave = true;
       }
     } else if (!entry.lastPowerOffAt) {
       entry.lastPowerOffAt = nowIso;
@@ -251,11 +280,10 @@ class HistoryStore {
   summarize(id, status, now = new Date()) {
     const entry = this.entry(id);
     const currentPower = status?.operation ? "on" : "off";
-    const currentElectric = nonNegativeNumber(status?.electric) ?? nonNegativeNumber(entry.lastElectricKwh);
     const startedAt = entry.currentSession ? parseDate(entry.currentSession.startedAt) : null;
     const currentDurationMs = startedAt ? Math.max(0, now.getTime() - startedAt.getTime()) : 0;
     const currentSessionEnergy = entry.currentSession
-      ? maxKnownEnergy(entry.currentSession.energyKwh, currentElectric)
+      ? nonNegativeNumber(entry.currentSession.energyKwh)
       : null;
     const currentSession = entry.currentSession
       ? {
@@ -263,7 +291,6 @@ class HistoryStore {
           lastSeenAt: entry.currentSession.lastSeenAt || null,
           energyKwh: currentSessionEnergy,
           durationMs: currentDurationMs,
-          watts: currentSessionEnergy == null ? null : kwhToWatts(currentSessionEnergy, currentDurationMs),
         }
       : null;
 
@@ -274,14 +301,6 @@ class HistoryStore {
           durationMs: Math.max(0, parseDate(lastSessionRaw.endedAt).getTime() - parseDate(lastSessionRaw.startedAt).getTime()),
         }
       : null;
-
-    if (lastSession) {
-      lastSession.watts = lastSession.averageWatts;
-    }
-
-    const currentWatts = currentPower === "on"
-      ? currentSession?.watts
-      : lastSession?.watts ?? null;
 
     const monthStart = startOfLocalMonth(now);
     const currentMonthKey = monthKey(now);
@@ -307,6 +326,9 @@ class HistoryStore {
 
     const totalKwh = entry.completedEnergyKwh
       + (entry.currentSession && currentPower === "on" ? currentSessionEnergy ?? 0 : 0);
+    const currentWatts = currentPower === "on"
+      ? nonNegativeNumber(status?.operationData?.powerWatts)
+      : 0;
 
     return {
       powerState: currentPower,
