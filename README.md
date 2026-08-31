@@ -1,3 +1,5 @@
+> **Note on this fork:** This fork changes default communication to plain **HTTP** instead of HTTPS for WF-RAC Wi-Fi modules operating on port 51443. This resolves `EPROTO wrong version number` / SSL handshake errors when discovering or controlling units.
+
 # AircoBridge
 
 [![Latest release](https://img.shields.io/github/v/release/CrazyHenk44/AircoBridge)](https://github.com/CrazyHenk44/AircoBridge/releases/latest)
