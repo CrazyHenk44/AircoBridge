@@ -1,7 +1,7 @@
 "use strict";
 
 const axios = require("axios");
-const https = require("https");
+const http = require("http");
 const { INDOOR_TEMP_LIST, OUTDOOR_TEMP_LIST } = require("./temp-lookups");
 
 const DEFAULT_PORT = 51443;
@@ -627,7 +627,7 @@ class WfracClient {
     deviceId,
     operatorId,
     airconId = "1",
-    httpsMode = true,
+    httpsMode = false,
     userAgent = DEFAULT_USER_AGENT,
     timeoutMs = 10000,
   }) {
@@ -646,7 +646,7 @@ class WfracClient {
 
     this.http = axios.create({
       timeout: this.timeoutMs,
-      httpsAgent: new https.Agent({ rejectUnauthorized: false }),
+      httpAgent: new http.Agent(),
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "User-Agent": this.userAgent,
