@@ -20,7 +20,7 @@ function localTimezone() {
   }
 }
 
-function buildClient({ ip, port, httpsMode = true, timeoutMs = 10000, deviceId, operatorId, airconId = "1" }) {
+function buildClient({ ip, port, httpsMode = false, timeoutMs = 10000, deviceId, operatorId, airconId = "1" }) {
   return new WfracClient({ ip, port, httpsMode, timeoutMs, deviceId, operatorId, airconId });
 }
 
