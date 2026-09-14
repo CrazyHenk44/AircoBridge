@@ -35,7 +35,7 @@ function normalizeAirco(raw, idx) {
     operatorId: raw.operatorId,
     airconId: raw.airconId === undefined ? "1" : String(raw.airconId),
     discoveryId,
-    httpsMode: raw.httpsMode === undefined ? true : Boolean(raw.httpsMode),
+    httpsMode: raw.httpsMode === undefined ? false : Boolean(raw.httpsMode),
     pollIntervalMs: parseIntValue(raw.pollIntervalMs, 30000),
     timeoutMs: parseIntValue(raw.timeoutMs, 10000),
   };
@@ -71,7 +71,7 @@ function loadConfig() {
         deviceId: process.env.WF_DEVICE_ID,
         operatorId: process.env.WF_OPERATOR_ID,
         airconId: process.env.WF_AIRCON_ID || "1",
-        httpsMode: parseBool(process.env.WF_HTTPS, true),
+        httpsMode: parseBool(process.env.WF_HTTPS, false),
         pollIntervalMs: parseIntValue(process.env.WF_POLL_INTERVAL_MS, 30000),
         timeoutMs: parseIntValue(process.env.WF_TIMEOUT_MS, 10000),
       }],

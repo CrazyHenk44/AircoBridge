@@ -173,7 +173,7 @@ function setupTarget(body) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw Object.assign(new Error("Invalid port"), { statusCode: 400 });
   }
-  return { ip, port, httpsMode: body.httpsMode === undefined ? true : Boolean(body.httpsMode), timeoutMs: 8000 };
+  return { ip, port, httpsMode: body.httpsMode === undefined ? false : Boolean(body.httpsMode), timeoutMs: 8000 };
 }
 
 function slugFromName(name, manager) {
@@ -244,7 +244,7 @@ async function addAirco(res, manager, configFile, body) {
     operatorId: String(body.operatorId || "").trim(),
     airconId: body.airconId ? String(body.airconId).trim() : "1",
     discoveryId: body.discoveryId ? String(body.discoveryId).trim().toLowerCase() : undefined,
-    httpsMode: body.httpsMode === undefined ? true : Boolean(body.httpsMode),
+    httpsMode: body.httpsMode === undefined ? false : Boolean(body.httpsMode),
     pollIntervalMs: 30000,
     timeoutMs: 10000,
   };
